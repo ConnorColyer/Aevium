@@ -1,0 +1,363 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0DFCC4F8448D36C481ED9743 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 850D09C4584A345200CF01DB /* AppEnvironment.swift */; };
+		87BE2DCC9C6AE4FD19C36A18 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32470E089B0AC9C1FE4B4BF8 /* ContentView.swift */; };
+		906F7DEDF089BAE4B7DF7824 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F6D9F14611DD722AF3AE1484 /* Cocoa.framework */; };
+		BEF748533149A9BE507E46B6 /* SampleMarketData.csv in Resources */ = {isa = PBXBuildFile; fileRef = 1D1B11BA18FB7C2B5505A0E1 /* SampleMarketData.csv */; };
+		C696E5F91657E51D6BD1747F /* CSVMarketDataIngestor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C27DFF09B1AB1B53C6597812 /* CSVMarketDataIngestor.swift */; };
+		E4CE2A8B69FF70563A941B28 /* SQLiteMarketDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A83E6459C851B98714D0D6D /* SQLiteMarketDataStore.swift */; };
+		F0B1A2939DE4B3D4B6E6309D /* MarketDataRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA681E5708F9517AB502B49D /* MarketDataRepository.swift */; };
+		F2CE53B87DF336CE95A2457C /* AeviumApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2409A3666D962E960B1868C /* AeviumApp.swift */; };
+		FE721C23CD7F347E53F9B758 /* MarketDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EB207270E62873BB41A009A /* MarketDataModels.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		1D1B11BA18FB7C2B5505A0E1 /* SampleMarketData.csv */ = {isa = PBXFileReference; includeInIndex = 1; name = SampleMarketData.csv; path = Aevium/Resources/SampleMarketData.csv; sourceTree = "<group>"; };
+		32470E089B0AC9C1FE4B4BF8 /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ContentView.swift; path = Aevium/UI/ContentView.swift; sourceTree = "<group>"; };
+		6EB207270E62873BB41A009A /* MarketDataModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MarketDataModels.swift; path = Aevium/Data/MarketDataModels.swift; sourceTree = "<group>"; };
+		7A83E6459C851B98714D0D6D /* SQLiteMarketDataStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SQLiteMarketDataStore.swift; path = Aevium/Data/SQLiteMarketDataStore.swift; sourceTree = "<group>"; };
+		850D09C4584A345200CF01DB /* AppEnvironment.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppEnvironment.swift; path = Aevium/App/AppEnvironment.swift; sourceTree = "<group>"; };
+		AF1F86196E94ECC46D1A8FB7 /* Aevium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Aevium.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C27DFF09B1AB1B53C6597812 /* CSVMarketDataIngestor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CSVMarketDataIngestor.swift; path = Aevium/Data/CSVMarketDataIngestor.swift; sourceTree = "<group>"; };
+		CA681E5708F9517AB502B49D /* MarketDataRepository.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MarketDataRepository.swift; path = Aevium/Data/MarketDataRepository.swift; sourceTree = "<group>"; };
+		E2409A3666D962E960B1868C /* AeviumApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AeviumApp.swift; path = Aevium/App/AeviumApp.swift; sourceTree = "<group>"; };
+		F6D9F14611DD722AF3AE1484 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		377B9C5B4E0E6E840FFFC1B9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				906F7DEDF089BAE4B7DF7824 /* Cocoa.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0E998E1DA9DF71473DCE219A /* Aevium */ = {
+			isa = PBXGroup;
+			children = (
+				E2409A3666D962E960B1868C /* AeviumApp.swift */,
+				850D09C4584A345200CF01DB /* AppEnvironment.swift */,
+				C27DFF09B1AB1B53C6597812 /* CSVMarketDataIngestor.swift */,
+				6EB207270E62873BB41A009A /* MarketDataModels.swift */,
+				CA681E5708F9517AB502B49D /* MarketDataRepository.swift */,
+				7A83E6459C851B98714D0D6D /* SQLiteMarketDataStore.swift */,
+				32470E089B0AC9C1FE4B4BF8 /* ContentView.swift */,
+				1D1B11BA18FB7C2B5505A0E1 /* SampleMarketData.csv */,
+			);
+			name = Aevium;
+			sourceTree = "<group>";
+		};
+		57F2FC881EB57B022F581E7C /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				AA90275C37DE2EA30A69029D /* OS X */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		AA90275C37DE2EA30A69029D /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+				F6D9F14611DD722AF3AE1484 /* Cocoa.framework */,
+			);
+			name = "OS X";
+			sourceTree = "<group>";
+		};
+		C09E00A94BFDBDADB012E399 = {
+			isa = PBXGroup;
+			children = (
+				DB11C4D1F6163E01C06F3AD3 /* Products */,
+				57F2FC881EB57B022F581E7C /* Frameworks */,
+				0E998E1DA9DF71473DCE219A /* Aevium */,
+			);
+			sourceTree = "<group>";
+		};
+		DB11C4D1F6163E01C06F3AD3 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AF1F86196E94ECC46D1A8FB7 /* Aevium.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		8080DE1C6EA3D3599782A54D /* Aevium */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C40309482E34ACB7F1D1E407 /* Build configuration list for PBXNativeTarget "Aevium" */;
+			buildPhases = (
+				2A07FCC62A6038AFF461E489 /* Sources */,
+				377B9C5B4E0E6E840FFFC1B9 /* Frameworks */,
+				CBDD3ACCE69D48501213E50B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Aevium;
+			productName = Aevium;
+			productReference = AF1F86196E94ECC46D1A8FB7 /* Aevium.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		76815C8F23F384DE39663A5E /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = AF730F3F250EE9B69C0BD4BD /* Build configuration list for PBXProject "Aevium" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = C09E00A94BFDBDADB012E399;
+			minimizedProjectReferenceProxies = 0;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = DB11C4D1F6163E01C06F3AD3 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				8080DE1C6EA3D3599782A54D /* Aevium */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		CBDD3ACCE69D48501213E50B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BEF748533149A9BE507E46B6 /* SampleMarketData.csv in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		2A07FCC62A6038AFF461E489 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F2CE53B87DF336CE95A2457C /* AeviumApp.swift in Sources */,
+				0DFCC4F8448D36C481ED9743 /* AppEnvironment.swift in Sources */,
+				C696E5F91657E51D6BD1747F /* CSVMarketDataIngestor.swift in Sources */,
+				FE721C23CD7F347E53F9B758 /* MarketDataModels.swift in Sources */,
+				F0B1A2939DE4B3D4B6E6309D /* MarketDataRepository.swift in Sources */,
+				E4CE2A8B69FF70563A941B28 /* SQLiteMarketDataStore.swift in Sources */,
+				87BE2DCC9C6AE4FD19C36A18 /* ContentView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		848BB4C865A4FED2C8772A69 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Aevium;
+				INFOPLIST_KEY_NSHumanReadableCopyright = Aevium;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aevium.desktop;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A25F931D86ED569607D7EAFE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aevium.desktop;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		BB829FB5C1F4B8BC25B4A158 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aevium.desktop;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		D1FF323F4209FDC7E8C9D623 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Aevium;
+				INFOPLIST_KEY_NSHumanReadableCopyright = Aevium;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aevium.desktop;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AF730F3F250EE9B69C0BD4BD /* Build configuration list for PBXProject "Aevium" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D1FF323F4209FDC7E8C9D623 /* Debug */,
+				848BB4C865A4FED2C8772A69 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C40309482E34ACB7F1D1E407 /* Build configuration list for PBXNativeTarget "Aevium" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BB829FB5C1F4B8BC25B4A158 /* Release */,
+				A25F931D86ED569607D7EAFE /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 76815C8F23F384DE39663A5E /* Project object */;
+}
