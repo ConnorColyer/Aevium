@@ -1,8 +1,14 @@
 import Foundation
 
+struct InstrumentSelectionRequest: Identifiable {
+    let id = UUID()
+    let instrument: InstrumentMetadata
+}
+
 @MainActor
 final class AppEnvironment: ObservableObject {
     let repository: MarketDataRepository
+    @Published var instrumentSelectionRequest: InstrumentSelectionRequest?
 
     init() {
         do {
@@ -11,6 +17,10 @@ final class AppEnvironment: ObservableObject {
         } catch {
             fatalError("Failed to bootstrap data layer: \(error)")
         }
+    }
+
+    func openInstrument(_ instrument: InstrumentMetadata) {
+        instrumentSelectionRequest = InstrumentSelectionRequest(instrument: instrument)
     }
 
     private static func databaseURL() throws -> URL {

@@ -2,37 +2,81 @@ import Foundation
 
 actor MarketDataRepository {
     private let store: SQLiteMarketDataStore
-    private let ingestor: CSVMarketDataIngestor
+    private let router: ProviderRouter
+    private let liveIngestion: LiveIngestionService
+    private let backfillService: BackfillService
 
     init(databaseURL: URL) throws {
         self.store = try SQLiteMarketDataStore(databaseURL: databaseURL)
-        self.ingestor = CSVMarketDataIngestor()
+        self.router = ProviderRouter()
+        self.liveIngestion = LiveIngestionService(store: store, router: router)
+        self.backfillService = BackfillService(store: store, router: router)
     }
 
-    func ingestCSV(at fileURL: URL, onProgress: CSVMarketDataIngestor.ProgressHandler? = nil) throws -> IngestionProgress {
-        try store.beginTransaction()
+    func defaultInstrument() -> InstrumentMetadata {
+        router.defaultInstrument()
+    }
 
-        do {
-            let progress = try ingestor.ingest(from: fileURL, commitBatch: { [store] batch in
-                try store.insert(records: batch)
-            }, onProgress: onProgress)
-            try store.commitTransaction()
-            return progress
-        } catch {
-            store.rollbackTransaction()
-            throw error
+    func searchInstruments(query: String) async throws -> [InstrumentMetadata] {
+        let cached = try store.cachedInstruments(matching: query)
+        let remote = await router.search(query: query)
+        let merged = mergeInstruments(cached + remote)
+
+        for instrument in merged {
+            try? store.upsertInstrument(instrument)
         }
+
+        return merged
     }
 
-    func datasetSummary() throws -> DatasetSummary {
-        try store.datasetSummary()
+    func resolveInstrument(query: String) -> InstrumentMetadata {
+        router.inferInstrument(from: query)
     }
 
-    func symbolSummaries(limit: Int = 200) throws -> [SymbolSummary] {
-        try store.symbolSummaries(limit: limit)
+    func subscribeLive(
+        instrument: InstrumentMetadata,
+        viewport: MarketViewport
+    ) async -> AsyncThrowingStream<MarketSeriesSnapshot, Error> {
+        await liveIngestion.subscribeLive(instrument: instrument, viewport: viewport)
     }
 
-    func candles(for symbol: String, limit: Int = 600) throws -> [Candle] {
-        try store.candles(for: symbol, limit: limit)
+    func startBackfill(
+        instrument: InstrumentMetadata,
+        viewport: MarketViewport
+    ) async -> AsyncStream<BackfillEvent> {
+        await backfillService.startBackfill(instrument: instrument, viewport: viewport)
+    }
+
+    func series(instrument: InstrumentMetadata, viewport: MarketViewport) throws -> [LinePoint] {
+        try store.linePoints(
+            for: instrument.id,
+            from: viewport.fromTimestamp,
+            limit: viewport.visiblePointTarget,
+            minimumResolution: viewport.resolution
+        )
+    }
+
+    func syncState(instrument: InstrumentMetadata) throws -> SyncState {
+        try store.syncState(for: instrument.id)
+    }
+
+    func topMovers(limit: Int = 80) async throws -> [MarketMover] {
+        let movers = try await router.topMovers(limit: limit)
+        for mover in movers {
+            try? store.upsertInstrument(mover.instrument)
+        }
+        return movers
+    }
+
+    private func mergeInstruments(_ instruments: [InstrumentMetadata]) -> [InstrumentMetadata] {
+        var seen: Set<InstrumentID> = []
+        var results: [InstrumentMetadata] = []
+
+        for instrument in instruments where !seen.contains(instrument.id) {
+            seen.insert(instrument.id)
+            results.append(instrument)
+        }
+
+        return Array(results.prefix(12))
     }
 }

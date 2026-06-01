@@ -8,46 +8,93 @@ private extension Notification.Name {
     static let aeviumMinimizeWindow = Notification.Name("aeviumMinimizeWindow")
 }
 
+private enum Motion {
+    static let standard = Animation.easeInOut(duration: 0.22)
+    static let micro = Animation.linear(duration: 0.10)
+}
+
+private enum WorkspaceTab {
+    case market
+    case overview
+}
+
 struct ContentView: View {
+    @EnvironmentObject private var environment: AppEnvironment
+    @StateObject private var market = AeviumMarketViewModel()
     @State private var selectedRange: ChartRange = .week
+    @State private var selectedTab: WorkspaceTab = .market
     @State private var isOldStyleFullscreen = false
 
-    private let points = Self.makeSeries()
+    private let fallbackPoints = Self.makeSeries()
 
     private var visiblePoints: [GraphPoint] {
-        selectedRange.slice(from: points)
+        let cutoff = Date().addingTimeInterval(-selectedRange.marketTimeRange.duration)
+        let source = market.points.filter { $0.date >= cutoff }
+        let sampled = Self.sampleLinePoints(source, limit: selectedRange.marketTimeRange.maxVisiblePoints)
+        let live = sampled.enumerated().map { index, point in
+            GraphPoint(index: index, date: point.date, value: point.price)
+        }
+        if selectedRange == .twentyFiveMinutes {
+            return live
+        }
+        return live.count > 1 ? live : selectedRange.slice(from: fallbackPoints)
     }
-
-    private var firstValue: Double { visiblePoints.first?.value ?? 0 }
-    private var lastValue: Double { visiblePoints.last?.value ?? 0 }
-    private var absoluteChange: Double { lastValue - firstValue }
-    private var percentChange: Double {
-        guard firstValue != 0 else { return 0 }
-        return (absoluteChange / firstValue) * 100
-    }
-    private var highValue: Double { visiblePoints.map(\.value).max() ?? 0 }
-    private var lowValue: Double { visiblePoints.map(\.value).min() ?? 0 }
 
     var body: some View {
+        let renderedPoints = visiblePoints
+        let firstValue = renderedPoints.first?.value ?? 0
+        let lastValue = renderedPoints.last?.value ?? 0
+        let absoluteChange = lastValue - firstValue
+        let percentChange = firstValue == 0 ? 0 : (absoluteChange / firstValue) * 100
+        let values = renderedPoints.map(\.value)
+        let highValue = values.max() ?? 0
+        let lowValue = values.min() ?? 0
+
         GeometryReader { proxy in
             ZStack {
                 AmbientBackground(size: proxy.size)
 
                 AeviumWorkspace(
-                    points: visiblePoints,
+                    market: market,
+                    points: renderedPoints,
+                    selectedTab: $selectedTab,
                     selectedRange: $selectedRange,
+                    instrumentSymbol: market.selectedInstrument.compactTitle,
+                    instrumentSession: market.selectedInstrument.session,
+                    syncState: market.syncState,
                     lastValue: lastValue,
                     absoluteChange: absoluteChange,
                     highValue: highValue,
                     lowValue: lowValue,
                     percentChange: percentChange,
-                    pointCount: visiblePoints.count,
+                    pointCount: renderedPoints.count,
                     isOldStyleFullscreen: isOldStyleFullscreen
                 )
             }
             .ignoresSafeArea()
-            .animation(.easeOut(duration: 0.16), value: isOldStyleFullscreen)
             .background(WindowChromeConfigurator(isOldStyleFullscreen: $isOldStyleFullscreen))
+        }
+        .onAppear {
+            market.attach(repository: environment.repository)
+            market.setRange(selectedRange.marketTimeRange)
+        }
+        .onChange(of: selectedRange) { _, newValue in
+            market.setRange(newValue.marketTimeRange)
+        }
+        .onReceive(environment.$instrumentSelectionRequest) { request in
+            guard let request else { return }
+            selectedTab = .market
+            market.selectInstrument(request.instrument)
+        }
+    }
+
+    private static func sampleLinePoints(_ source: [LinePoint], limit: Int) -> [LinePoint] {
+        guard source.count > limit, limit > 2 else { return source }
+
+        let step = Double(source.count - 1) / Double(limit - 1)
+        return (0..<limit).map { index in
+            let sourceIndex = min(max(Int((Double(index) * step).rounded()), 0), source.count - 1)
+            return source[sourceIndex]
         }
     }
 
@@ -71,10 +118,17 @@ struct ContentView: View {
 }
 
 private struct AeviumWorkspace: View {
-    @State private var isInspectorOpen = true
+    @State private var inspectorTargetOpen = true
+    @State private var inspectorReveal: CGFloat = 1.0
+    @State private var isSettingsPresented = false
 
+    @ObservedObject var market: AeviumMarketViewModel
     let points: [GraphPoint]
+    @Binding var selectedTab: WorkspaceTab
     @Binding var selectedRange: ChartRange
+    let instrumentSymbol: String
+    let instrumentSession: String
+    let syncState: SyncState
     let lastValue: Double
     let absoluteChange: Double
     let highValue: Double
@@ -84,10 +138,19 @@ private struct AeviumWorkspace: View {
     let isOldStyleFullscreen: Bool
 
     private var isUp: Bool { percentChange >= 0 }
+    private let inspectorMaxWidth: CGFloat = 304
+    private var inspectorWidth: CGFloat { inspectorMaxWidth * inspectorReveal }
+    private var inspectorDividerOpacity: Double { Double(inspectorReveal) }
 
     var body: some View {
         HStack(spacing: 0) {
-            AeviumRail(isOldStyleFullscreen: isOldStyleFullscreen)
+            AeviumRail(
+                isOldStyleFullscreen: isOldStyleFullscreen,
+                selectedTab: selectedTab,
+                onSelectMarketTab: { selectedTab = .market },
+                onSelectOverviewTab: { selectedTab = .overview },
+                onSettingsTapped: { isSettingsPresented = true }
+            )
 
             VStack(spacing: 0) {
                 WorkspaceTopBar()
@@ -96,48 +159,88 @@ private struct AeviumWorkspace: View {
                     .fill(Color.white.opacity(0.065))
                     .frame(height: 1)
 
-                HStack(spacing: 0) {
-                    ChartStage(
-                        points: points,
-                        selectedRange: $selectedRange,
-                        isUp: isUp
-                    )
+                if selectedTab == .market {
+                    ZStack(alignment: .topTrailing) {
+                        HStack(spacing: 0) {
+                            ChartStage(
+                                points: points,
+                                selectedRange: $selectedRange,
+                                isUp: isUp,
+                                drawerReveal: inspectorReveal
+                            )
 
-                    Rectangle()
-                        .fill(Color.white.opacity(0.065))
-                        .frame(width: 1)
+                            Rectangle()
+                                .fill(Color.white.opacity(0.065))
+                                .frame(width: 1)
+                                .opacity(inspectorDividerOpacity)
 
-                    if isInspectorOpen {
-                        MarketInspector(
-                            isOpen: $isInspectorOpen,
-                            selectedRange: selectedRange,
-                            lastValue: lastValue,
-                            absoluteChange: absoluteChange,
-                            highValue: highValue,
-                            lowValue: lowValue,
-                            percentChange: percentChange,
-                            pointCount: pointCount,
-                            isUp: isUp
+                            ZStack(alignment: .trailing) {
+                                MarketInspector(
+                                    points: points,
+                                    instrumentSymbol: instrumentSymbol,
+                                    instrumentSession: instrumentSession,
+                                    selectedRange: selectedRange,
+                                    lastValue: lastValue,
+                                    absoluteChange: absoluteChange,
+                                    highValue: highValue,
+                                    lowValue: lowValue,
+                                    percentChange: percentChange,
+                                    pointCount: pointCount,
+                                    isUp: isUp
+                                )
+                                .frame(width: inspectorMaxWidth, alignment: .trailing)
+                                .offset(x: (1 - inspectorReveal) * 14)
+                                .opacity(0.42 + (0.58 * inspectorReveal))
+                            }
+                            .frame(width: inspectorWidth, alignment: .trailing)
+                            .clipped()
+                            .allowsHitTesting(inspectorReveal > 0.01)
+                        }
+
+                        ChartTopControls(
+                            market: market,
+                            selectedRange: $selectedRange,
+                            isInspectorOpen: inspectorTargetOpen,
+                            onToggleInspector: toggleInspector
                         )
-                        .frame(width: 304)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                    } else {
-                        CollapsedInspectorRail(isOpen: $isInspectorOpen)
-                            .frame(width: 46)
-                            .transition(.opacity)
+                        .padding(.top, 10)
+                        .padding(.trailing, 20)
+                        .offset(x: -(inspectorWidth + inspectorReveal))
+
+                        SyncStatusStrip(state: syncState)
+                            .padding(.top, 13)
+                            .padding(.leading, 22)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .allowsHitTesting(false)
                     }
+                    .animation(Motion.standard, value: inspectorReveal)
+                } else {
+                    MarketOverviewTab()
                 }
-                .animation(.spring(response: 0.28, dampingFraction: 0.88), value: isInspectorOpen)
             }
         }
         .background(
             Color(red: 0.105, green: 0.117, blue: 0.130).opacity(0.64)
         )
+        .sheet(isPresented: $isSettingsPresented) {
+            AeviumSettingsView()
+        }
+    }
+
+    private func toggleInspector() {
+        inspectorTargetOpen.toggle()
+        withAnimation(Motion.standard) {
+            inspectorReveal = inspectorTargetOpen ? 1.0 : 0.0
+        }
     }
 }
 
 private struct AeviumRail: View {
     let isOldStyleFullscreen: Bool
+    let selectedTab: WorkspaceTab
+    let onSelectMarketTab: () -> Void
+    let onSelectOverviewTab: () -> Void
+    let onSettingsTapped: () -> Void
 
     var body: some View {
         VStack(spacing: 22) {
@@ -149,20 +252,20 @@ private struct AeviumRail: View {
 
             Spacer().frame(height: isOldStyleFullscreen ? 56 : 70)
 
-            railButton("chart.xyaxis.line", active: true)
-            railButton("tray.full", active: false)
+            railButton("chart.xyaxis.line", active: selectedTab == .market, help: "Market view", action: onSelectMarketTab)
+            railButton("square.grid.2x2", active: selectedTab == .overview, help: "Market overview", action: onSelectOverviewTab)
             railButton("waveform.path.ecg", active: false)
 
             Spacer()
 
-            railButton("slider.horizontal.3", active: false)
+            railButton("slider.horizontal.3", active: false, help: "Settings", action: onSettingsTapped)
         }
         .frame(width: 64)
         .background(Color.black.opacity(0.12))
     }
 
-    private func railButton(_ icon: String, active: Bool) -> some View {
-        Button {} label: {
+    private func railButton(_ icon: String, active: Bool, help: String? = nil, action: @escaping () -> Void = {}) -> some View {
+        Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(active ? Color(red: 0.72, green: 0.88, blue: 0.82) : .white.opacity(0.34))
@@ -171,9 +274,9 @@ private struct AeviumRail: View {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .fill(active ? Color.white.opacity(0.075) : Color.clear)
                 )
-                .help(icon)
         }
         .buttonStyle(.plain)
+        .help(help ?? icon)
     }
 }
 
@@ -189,6 +292,216 @@ private struct WorkspaceTopBar: View {
         .padding(.leading, 22)
         .padding(.trailing, 22)
         .frame(height: 40)
+    }
+}
+
+struct AeviumSettingsView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var finnhubAPIKey = ""
+    @State private var isKeyVisible = false
+    @State private var statusMessage = "Stock data uses Finnhub. Crypto data uses Binance public endpoints and needs no key."
+    @State private var statusIsError = false
+
+    private var hasSavedKey: Bool {
+        AeviumAPIKeyStore.hasFinnhubAPIKey()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Aevium Settings")
+                        .font(.system(size: 21, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.94))
+
+                    Text("Provider keys stay in your macOS Keychain, not in the project folder or Git history.")
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.52))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Button("Done") {
+                    dismiss()
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.70))
+            }
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    providerBadge(title: "Binance", subtitle: "Crypto", state: "Public")
+                    providerBadge(title: "Finnhub", subtitle: "Equities", state: hasSavedKey ? "Key saved" : "Needs key")
+                }
+
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("Finnhub API Key")
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(1.5)
+                        .foregroundStyle(.white.opacity(0.48))
+
+                    HStack(spacing: 8) {
+                        Group {
+                            if isKeyVisible {
+                                TextField("Paste free Finnhub key", text: $finnhubAPIKey)
+                            } else {
+                                SecureField("Paste free Finnhub key", text: $finnhubAPIKey)
+                            }
+                        }
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.86))
+                        .padding(.horizontal, 12)
+                        .frame(height: 38)
+                        .background(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(Color.black.opacity(0.20))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                )
+                        )
+
+                        Button {
+                            isKeyVisible.toggle()
+                        } label: {
+                            Image(systemName: isKeyVisible ? "eye.slash" : "eye")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.56))
+                                .frame(width: 38, height: 38)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                        .fill(Color.white.opacity(0.055))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help(isKeyVisible ? "Hide key" : "Show key")
+                    }
+
+                    Text(statusMessage)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(statusIsError ? Color(red: 1.0, green: 0.42, blue: 0.42) : .white.opacity(0.46))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 10) {
+                    Button {
+                        saveKey()
+                    } label: {
+                        Text("Save Locally")
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(.black.opacity(0.78))
+                            .frame(height: 34)
+                            .padding(.horizontal, 14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .fill(Color(red: 0.67, green: 0.86, blue: 0.78))
+                            )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        clearKey()
+                    } label: {
+                        Text("Clear Key")
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.62))
+                            .frame(height: 34)
+                            .padding(.horizontal, 14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .fill(Color.white.opacity(0.055))
+                            )
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer()
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.045),
+                                Color(red: 0.08, green: 0.12, blue: 0.13).opacity(0.72),
+                                Color.black.opacity(0.20)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+            )
+        }
+        .padding(22)
+        .frame(width: 520)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color(red: 0.09, green: 0.11, blue: 0.13),
+                    Color(red: 0.07, green: 0.08, blue: 0.10)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .onAppear {
+            finnhubAPIKey = AeviumAPIKeyStore.finnhubAPIKey() ?? ""
+        }
+    }
+
+    private func providerBadge(title: String, subtitle: String, state: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.88))
+
+            HStack(spacing: 6) {
+                Text(subtitle)
+                    .foregroundStyle(.white.opacity(0.42))
+                Circle()
+                    .fill(state == "Needs key" ? Color(red: 0.90, green: 0.62, blue: 0.34) : Color(red: 0.48, green: 0.82, blue: 0.66))
+                    .frame(width: 5, height: 5)
+                Text(state)
+                    .foregroundStyle(.white.opacity(0.54))
+            }
+            .font(.system(size: 11.5, weight: .medium))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.black.opacity(0.15))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                )
+        )
+    }
+
+    private func saveKey() {
+        do {
+            try AeviumAPIKeyStore.setFinnhubAPIKey(finnhubAPIKey)
+            statusIsError = false
+            statusMessage = finnhubAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "Finnhub key removed. Crypto data will continue to work through Binance."
+                : "Saved to macOS Keychain. Equity searches and live stock data will use this key."
+        } catch {
+            statusIsError = true
+            statusMessage = "Could not save key: \(error.localizedDescription)"
+        }
+    }
+
+    private func clearKey() {
+        finnhubAPIKey = ""
+        saveKey()
     }
 }
 
@@ -234,6 +547,7 @@ private struct FullscreenWindowControls: View {
             .frame(width: 12, height: 12)
             .scaleEffect(isHovering ? 1.02 : 1)
         }
+        .animation(Motion.micro, value: isHovering)
         .buttonStyle(.plain)
         .help(name)
     }
@@ -243,6 +557,13 @@ private struct ChartStage: View {
     let points: [GraphPoint]
     @Binding var selectedRange: ChartRange
     let isUp: Bool
+    let drawerReveal: CGFloat
+
+    private struct YAxisConfiguration {
+        let domain: ClosedRange<Double>
+        let ticks: [Double]
+        let step: Double
+    }
 
     private static let dayPrefixFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -258,48 +579,66 @@ private struct ChartStage: View {
         return formatter
     }()
 
-    private var yDomain: ClosedRange<Double> {
-        let minValue = points.map(\.value).min() ?? 0
-        let maxValue = points.map(\.value).max() ?? 1
-        let span = max(maxValue - minValue, 1)
-        return (minValue - span * 0.06)...(maxValue + span * 0.07)
+    private var yAxisConfiguration: YAxisConfiguration {
+        let values = points.map(\.value)
+        let minValue = values.min() ?? 0
+        let maxValue = values.max() ?? 1
+        let span = max(maxValue - minValue, max(abs(maxValue), 1) * 0.001)
+        let rawStep = span / 5
+        let step = niceStep(for: rawStep)
+
+        let paddedMin = floor((minValue - step * 0.30) / step) * step
+        let paddedMax = ceil((maxValue + step * 0.40) / step) * step
+
+        let startIndex = Int(floor(paddedMin / step))
+        let endIndex = Int(ceil(paddedMax / step))
+        let ticks = (startIndex...endIndex).map { Double($0) * step }
+
+        return YAxisConfiguration(
+            domain: paddedMin...paddedMax,
+            ticks: ticks,
+            step: step
+        )
     }
 
     var body: some View {
         GeometryReader { proxy in
-            let ticks = adaptiveXAxisTicks(plotWidth: proxy.size.width - 96)
+            let yAxis = yAxisConfiguration
+            let ticks = adaptiveXAxisTicks(plotWidth: proxy.size.width)
             let labels = makeXAxisLabels(from: ticks)
 
             ZStack(alignment: .topTrailing) {
-                Chart(points) { point in
-                    AreaMark(
-                        x: .value("Time", point.date),
-                        yStart: .value("Base", yDomain.lowerBound),
-                        yEnd: .value("Price", point.value)
-                    )
-                    .interpolationMethod(.catmullRom)
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.50, green: 0.72, blue: 0.70).opacity(0.20),
-                                Color(red: 0.25, green: 0.33, blue: 0.36).opacity(0.06)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
+                Chart {
+                    ForEach(points) { point in
+                        AreaMark(
+                            x: .value("Time", point.date),
+                            yStart: .value("Base", yAxis.domain.lowerBound),
+                            yEnd: .value("Price", point.value)
                         )
-                    )
+                        .interpolationMethod(selectedRange == .twentyFiveMinutes ? .linear : .catmullRom)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.50, green: 0.72, blue: 0.70).opacity(0.20),
+                                    Color(red: 0.25, green: 0.33, blue: 0.36).opacity(0.06)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
 
-                    LineMark(
-                        x: .value("Time", point.date),
-                        y: .value("Price", point.value)
-                    )
-                    .interpolationMethod(.catmullRom)
-                    .lineStyle(.init(lineWidth: 2.05, lineCap: .round, lineJoin: .round))
-                    .foregroundStyle(
-                        isUp
-                            ? Color(red: 0.60, green: 0.86, blue: 0.75)
-                            : Color(red: 0.86, green: 0.68, blue: 0.68)
-                    )
+                        LineMark(
+                            x: .value("Time", point.date),
+                            y: .value("Price", point.value)
+                        )
+                        .interpolationMethod(selectedRange == .twentyFiveMinutes ? .linear : .catmullRom)
+                        .lineStyle(.init(lineWidth: 2.05, lineCap: .round, lineJoin: .round))
+                        .foregroundStyle(
+                            isUp
+                                ? Color(red: 0.60, green: 0.86, blue: 0.75)
+                                : Color(red: 0.86, green: 0.68, blue: 0.68)
+                        )
+                    }
 
                     if let last = points.last {
                         RuleMark(y: .value("Last", last.value))
@@ -315,14 +654,18 @@ private struct ChartStage: View {
                     }
                 }
                 .chartLegend(.hidden)
-                .chartYScale(domain: yDomain)
+                .chartYScale(domain: yAxis.domain)
                 .chartYAxis {
-                    AxisMarks(position: .leading, values: .automatic(desiredCount: 5)) { _ in
+                    AxisMarks(position: .leading, values: yAxis.ticks) { value in
                         AxisGridLine(stroke: .init(lineWidth: 0.55, dash: [2, 8]))
                             .foregroundStyle(.white.opacity(0.13))
-                        AxisValueLabel()
-                            .foregroundStyle(.white.opacity(0.42))
-                            .font(.system(size: 10, weight: .regular, design: .monospaced))
+                        AxisValueLabel {
+                            if let y = value.as(Double.self) {
+                                Text(formatYAxisValue(y, step: yAxis.step))
+                            }
+                        }
+                        .foregroundStyle(.white.opacity(0.42))
+                        .font(.system(size: 10, weight: .regular, design: .monospaced))
                     }
                 }
                 .chartXAxis {
@@ -345,10 +688,21 @@ private struct ChartStage: View {
                 .padding(.leading, 12)
                 .padding(.trailing, 10)
                 .padding(.bottom, 12)
+                .scaleEffect(x: 1.0 - (0.010 * drawerReveal), y: 1, anchor: .leading)
+                .offset(x: -3.0 * drawerReveal)
+                .overlay(alignment: .trailing) {
+                    LinearGradient(
+                        colors: [
+                            Color.clear,
+                            Color.black.opacity(0.12 * drawerReveal)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: 24)
+                    .allowsHitTesting(false)
+                }
 
-                AeviumRangeSelector(selectedRange: $selectedRange)
-                    .padding(.trailing, 20)
-                    .padding(.top, 10)
             }
         }
         .background(
@@ -364,20 +718,49 @@ private struct ChartStage: View {
     }
 
     private func adaptiveXAxisTicks(plotWidth: CGFloat) -> [Date] {
-        guard points.count > 2 else { return points.map(\.date) }
-
-        let minimumLabelSpacing: CGFloat = 104
-        let desiredTickCount = max(3, Int(plotWidth / minimumLabelSpacing))
-        let step = Double(points.count - 1) / Double(max(desiredTickCount - 1, 1))
-
-        var indexSet: Set<Int> = [0, points.count - 1]
-        for i in 1..<(desiredTickCount - 1) {
-            indexSet.insert(Int((Double(i) * step).rounded()))
+        guard let first = points.first?.date, let last = points.last?.date else {
+            return []
+        }
+        guard first < last else {
+            return [first]
         }
 
-        return indexSet
-            .sorted()
-            .map { points[$0].date }
+        let availableWidth = max(plotWidth - 70, 320)
+        let maxTickCount = max(3, min(10, Int(availableWidth / 95)))
+        let preferredTickCount: Int = switch selectedRange {
+        case .twentyFiveMinutes: 6
+        case .hour: 6
+        case .day: 7
+        case .week: 8
+        case .month: 7
+        case .quarter: 6
+        case .year: 6
+        }
+        let targetCount = max(3, min(maxTickCount, preferredTickCount))
+
+        let totalSeconds = last.timeIntervalSince(first)
+        let rawStep = totalSeconds / Double(max(targetCount - 1, 1))
+        let step = timeStep(for: rawStep)
+
+        let startTS = first.timeIntervalSince1970
+        let endTS = last.timeIntervalSince1970
+        let firstAligned = ceil(startTS / step) * step
+        let lastAligned = floor(endTS / step) * step
+
+        var tickDates: [Date] = []
+        if firstAligned <= lastAligned {
+            var current = firstAligned
+            while current <= lastAligned + 0.001 {
+                tickDates.append(Date(timeIntervalSince1970: current))
+                current += step
+            }
+        }
+
+        if tickDates.count < 2 {
+            return [first, last]
+        }
+
+        return tickDates
     }
 
     private func makeXAxisLabels(from ticks: [Date]) -> [Date: String] {
@@ -391,7 +774,7 @@ private struct ChartStage: View {
             let day = calendar.startOfDay(for: tick)
             let timeLabel = Self.timeFormatter.string(from: tick)
 
-            if previousDay == nil || day != previousDay {
+            if let previousDay, day != previousDay {
                 let dayLabel = Self.dayPrefixFormatter.string(from: tick)
                 labels[tick] = "\(dayLabel)\n\(timeLabel)"
             } else {
@@ -403,6 +786,208 @@ private struct ChartStage: View {
 
         return labels
     }
+
+    private func niceStep(for rawStep: Double) -> Double {
+        guard rawStep.isFinite, rawStep > 0 else { return 1 }
+
+        let exponent = floor(log10(rawStep))
+        let magnitude = pow(10, exponent)
+        let fraction = rawStep / magnitude
+
+        let niceFraction: Double
+        switch fraction {
+        case ..<1.5: niceFraction = 1
+        case ..<3.5: niceFraction = 2
+        case ..<7.5: niceFraction = 5
+        default: niceFraction = 10
+        }
+
+        return niceFraction * magnitude
+    }
+
+    private func timeStep(for rawSeconds: Double) -> TimeInterval {
+        let candidates: [TimeInterval] = [
+            15, 30,
+            60, 120, 300, 600, 900, 1800,
+            3600, 7200, 14400, 21600, 43200,
+            86400, 172800, 604800, 1_209_600, 2_592_000
+        ]
+        return candidates.first(where: { $0 >= rawSeconds }) ?? 2_592_000
+    }
+
+    private func formatYAxisValue(_ value: Double, step: Double) -> String {
+        let decimals = max(0, min(4, Int(ceil(-log10(max(step, 0.0001))))))
+        return value.formatted(
+            .number
+                .grouping(.automatic)
+                .precision(.fractionLength(decimals))
+        )
+    }
+}
+
+private struct ChartTopControls: View {
+    @ObservedObject var market: AeviumMarketViewModel
+    @Binding var selectedRange: ChartRange
+    let isInspectorOpen: Bool
+    let onToggleInspector: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            InstrumentSearchControl(market: market)
+            AeviumRangeSelector(selectedRange: $selectedRange)
+
+            Button(action: onToggleInspector) {
+                Image(systemName: "sidebar.right")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.56))
+                    .frame(width: 30, height: 30)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(Color.white.opacity(0.045))
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(isInspectorOpen ? "Hide inspector" : "Show inspector")
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .compositingGroup()
+    }
+}
+
+private struct InstrumentSearchControl: View {
+    @ObservedObject var market: AeviumMarketViewModel
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.38))
+
+                TextField("Symbol", text: Binding(
+                    get: { market.searchQuery },
+                    set: { market.updateSearchQuery($0) }
+                ))
+                .textFieldStyle(.plain)
+                .font(.system(size: 11.5, weight: .semibold, design: .default))
+                .foregroundStyle(.white.opacity(0.82))
+                .frame(width: 104)
+                .onSubmit {
+                    market.commitSearch()
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 35)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.black.opacity(0.16))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+            )
+
+            if !market.searchResults.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(market.searchResults.prefix(6), id: \.id) { instrument in
+                        Button {
+                            market.selectInstrument(instrument)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(instrument.compactTitle)
+                                    .font(.system(size: 11, weight: .semibold, design: .default))
+                                    .foregroundStyle(.white.opacity(0.88))
+                                    .frame(width: 74, alignment: .leading)
+                                Text(instrument.provider.uppercased())
+                                    .font(.system(size: 8.5, weight: .semibold, design: .default))
+                                    .tracking(1.0)
+                                    .foregroundStyle(.white.opacity(0.36))
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 9)
+                            .frame(height: 27)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(5)
+                .frame(width: 180)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color(red: 0.08, green: 0.095, blue: 0.11).opacity(0.98))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                        )
+                )
+                .offset(y: 39)
+                .zIndex(20)
+            }
+        }
+        .frame(width: 146, height: 35, alignment: .topLeading)
+    }
+}
+
+private struct SyncStatusStrip: View {
+    let state: SyncState
+
+    private var tint: Color {
+        switch state.state {
+        case .connected:
+            return Color(red: 0.56, green: 0.84, blue: 0.72)
+        case .backfilling, .connecting:
+            return Color(red: 0.78, green: 0.70, blue: 0.54)
+        case .rateLimited, .delayed:
+            return Color(red: 0.85, green: 0.64, blue: 0.46)
+        case .failed, .disconnected:
+            return Color(red: 0.86, green: 0.50, blue: 0.52)
+        case .idle:
+            return Color.white.opacity(0.42)
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(tint)
+                .frame(width: 5.5, height: 5.5)
+
+            Text(label)
+                .font(.system(size: 10.5, weight: .semibold, design: .default))
+                .foregroundStyle(.white.opacity(0.54))
+                .lineLimit(1)
+
+            if state.state == .backfilling {
+                ProgressView(value: state.progress)
+                    .progressViewStyle(.linear)
+                    .frame(width: 58)
+                    .tint(tint)
+            }
+        }
+        .padding(.horizontal, 9)
+        .frame(height: 27)
+        .background(
+            Capsule(style: .continuous)
+                .fill(Color.black.opacity(0.13))
+                .overlay(Capsule(style: .continuous).stroke(Color.white.opacity(0.065), lineWidth: 1))
+        )
+    }
+
+    private var label: String {
+        switch state.state {
+        case .backfilling:
+            return "\(state.message) \(Int(state.progress * 100))%"
+        case .connecting:
+            return state.message
+        case .connected:
+            return state.message
+        case .rateLimited, .delayed, .disconnected, .failed:
+            return state.message
+        case .idle:
+            return "Preparing feed"
+        }
+    }
 }
 
 private struct AeviumRangeSelector: View {
@@ -412,15 +997,13 @@ private struct AeviumRangeSelector: View {
         HStack(spacing: 2) {
             ForEach(ChartRange.allCases) { range in
                 Button {
-                    withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
-                        selectedRange = range
-                    }
+                    selectedRange = range
                 } label: {
                     Text(range.rawValue)
                         .font(.system(size: 11, weight: .medium, design: .default))
                         .monospacedDigit()
                         .foregroundStyle(selectedRange == range ? .white.opacity(0.9) : .white.opacity(0.38))
-                        .frame(width: 38, height: 27)
+                        .frame(width: 34, height: 27)
                         .background(
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
                                 .fill(selectedRange == range ? Color.white.opacity(0.105) : Color.clear)
@@ -442,8 +1025,9 @@ private struct AeviumRangeSelector: View {
 }
 
 private struct MarketInspector: View {
-    @Binding var isOpen: Bool
-
+    let points: [GraphPoint]
+    let instrumentSymbol: String
+    let instrumentSession: String
     let selectedRange: ChartRange
     let lastValue: Double
     let absoluteChange: Double
@@ -453,112 +1037,485 @@ private struct MarketInspector: View {
     let pointCount: Int
     let isUp: Bool
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Text("BTC / USDT")
-                            .font(.system(size: 16, weight: .semibold, design: .default))
-                            .foregroundStyle(.white.opacity(0.86))
+    private var displaySymbol: String {
+        instrumentSymbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    }
 
-                        HStack(spacing: 5) {
-                            Circle()
-                                .fill(Color(red: 0.48, green: 0.85, blue: 0.69))
-                                .frame(width: 6, height: 6)
-                            Text("Live")
-                                .font(.system(size: 11, weight: .medium, design: .default))
-                                .foregroundStyle(.white.opacity(0.50))
+    private var marketState: String {
+        instrumentSession
+    }
+
+    private var sampleCadenceMinutes: Double {
+        guard points.count > 1 else { return 0 }
+        let first = points.first?.date ?? Date()
+        let last = points.last?.date ?? Date()
+        let spanMinutes = last.timeIntervalSince(first) / 60
+        return spanMinutes / Double(max(points.count - 1, 1))
+    }
+
+    private var windowHours: Double {
+        guard let first = points.first?.date, let last = points.last?.date else { return 0 }
+        return last.timeIntervalSince(first) / 3600
+    }
+
+    private var returns: [Double] {
+        guard points.count > 1 else { return [] }
+        return zip(points.dropFirst(), points).map { newPoint, oldPoint in
+            guard oldPoint.value != 0 else { return 0 }
+            return (newPoint.value - oldPoint.value) / oldPoint.value
+        }
+    }
+
+    private var averageReturn: Double {
+        guard !returns.isEmpty else { return 0 }
+        return returns.reduce(0, +) / Double(returns.count)
+    }
+
+    private var medianReturn: Double {
+        guard !returns.isEmpty else { return 0 }
+        let sorted = returns.sorted()
+        let mid = sorted.count / 2
+        if sorted.count.isMultiple(of: 2) {
+            return (sorted[mid - 1] + sorted[mid]) / 2
+        }
+        return sorted[mid]
+    }
+
+    private var returnStdDev: Double {
+        guard returns.count > 1 else { return 0 }
+        let mean = averageReturn
+        let variance = returns.reduce(0) { $0 + pow($1 - mean, 2) } / Double(returns.count - 1)
+        return sqrt(variance)
+    }
+
+    private var realizedVolPercent: Double {
+        return returnStdDev * sqrt(Double(max(returns.count, 1))) * 100
+    }
+
+    private var averageCandleMovePercent: Double {
+        guard points.count > 1 else { return 0 }
+        let diffs = zip(points.dropFirst(), points).map { abs($0.value - $1.value) / max(abs($1.value), 0.0001) }
+        return (diffs.reduce(0, +) / Double(diffs.count)) * 100
+    }
+
+    private var downsideDeviationPercent: Double {
+        let negatives = returns.filter { $0 < 0 }
+        guard !negatives.isEmpty else { return 0 }
+        let meanSquare = negatives.reduce(0) { $0 + pow($1, 2) } / Double(negatives.count)
+        return sqrt(meanSquare) * 100
+    }
+
+    private var trendSlopePercentPerStep: Double {
+        guard points.count > 1, let first = points.first?.value else { return 0 }
+        let steps = Double(points.count - 1)
+        return ((lastValue - first) / max(abs(first), 0.0001)) / steps * 100
+    }
+
+    private var efficiencyRatio: Double {
+        guard points.count > 1 else { return 0 }
+        let pathLength = zip(points.dropFirst(), points).reduce(0.0) { $0 + abs($1.0.value - $1.1.value) }
+        let displacement = abs((points.last?.value ?? 0) - (points.first?.value ?? 0))
+        guard pathLength > 0 else { return 0 }
+        return displacement / pathLength
+    }
+
+    private var maxDrawdownPercent: Double {
+        guard !points.isEmpty else { return 0 }
+        var peak = points.first?.value ?? 0
+        var worst = 0.0
+        for point in points {
+            peak = max(peak, point.value)
+            guard peak != 0 else { continue }
+            let drawdown = (point.value - peak) / peak
+            worst = min(worst, drawdown)
+        }
+        return abs(worst * 100)
+    }
+
+    private var recoveryPercentFromLow: Double {
+        guard lowValue != 0 else { return 0 }
+        return max(0, (lastValue - lowValue) / abs(lowValue) * 100)
+    }
+
+    private var meanPrice: Double {
+        guard !points.isEmpty else { return 0 }
+        return points.map(\.value).reduce(0, +) / Double(points.count)
+    }
+
+    private var medianPrice: Double {
+        guard !points.isEmpty else { return 0 }
+        let sorted = points.map(\.value).sorted()
+        let mid = sorted.count / 2
+        if sorted.count.isMultiple(of: 2) {
+            return (sorted[mid - 1] + sorted[mid]) / 2
+        }
+        return sorted[mid]
+    }
+
+    private var priceStdDev: Double {
+        guard points.count > 1 else { return 0 }
+        let mean = meanPrice
+        let variance = points.reduce(0) { $0 + pow($1.value - mean, 2) } / Double(points.count - 1)
+        return sqrt(variance)
+    }
+
+    private var zScore: Double {
+        guard priceStdDev > 0 else { return 0 }
+        return (lastValue - meanPrice) / priceStdDev
+    }
+
+    private var vwapProxy: Double {
+        guard !points.isEmpty else { return 0 }
+        let weighted = points.enumerated().reduce(0.0) { acc, element in
+            let idx = Double(element.offset + 1)
+            return acc + (element.element.value * idx)
+        }
+        let sumWeights = Double(points.count * (points.count + 1)) / 2
+        return weighted / max(sumWeights, 1)
+    }
+
+    private var percentileInRange: Double {
+        let span = max(highValue - lowValue, 0.0001)
+        return ((lastValue - lowValue) / span).clamped(to: 0...1)
+    }
+
+    private var distanceToHighPercent: Double {
+        (1 - percentileInRange) * 100
+    }
+
+    private var distanceFromLowPercent: Double {
+        percentileInRange * 100
+    }
+
+    private var vwapDriftPercent: Double {
+        guard vwapProxy != 0 else { return 0 }
+        return ((lastValue - vwapProxy) / abs(vwapProxy)) * 100
+    }
+
+    private var medianDriftPercent: Double {
+        guard medianPrice != 0 else { return 0 }
+        return ((lastValue - medianPrice) / abs(medianPrice)) * 100
+    }
+
+    private var liquidityProxy: Double {
+        let amplitude = max(volatilityPercent, 0.01)
+        return Double(pointCount) / amplitude
+    }
+
+    private var trendQuality: String {
+        if efficiencyRatio > 0.62 { return "Directed" }
+        if efficiencyRatio > 0.38 { return "Transitional" }
+        return "Choppy"
+    }
+
+    private var sortinoLike: Double {
+        averageReturn / max(downsideDeviationPercent / 100, 0.0001)
+    }
+
+    private var flowScore: Double {
+        (0.52 + (percentChange / 18)).clamped(to: 0.16...0.84)
+    }
+
+    private var stressScore: Double {
+        (0.44 + (volatilityPercent / 18) + (isUp ? -0.05 : 0.07)).clamped(to: 0.14...0.88)
+    }
+
+    private var noiseScore: Double {
+        (0.24 + (volatilityPercent / 30)).clamped(to: 0.08...0.64)
+    }
+
+    private var confidenceScore: Double {
+        (0.62 - noiseScore * 0.35 + (isUp ? 0.06 : -0.08)).clamped(to: 0.18...0.86)
+    }
+
+    private var buyShare: Double {
+        (0.50 + (flowScore - 0.5) * 0.9 + (isUp ? 0.03 : -0.03)).clamped(to: 0.18...0.82)
+    }
+
+    private var sellShare: Double { 1 - buyShare }
+
+    private var notionalVolume: Double {
+        let spreadEnergy = abs(highValue - lowValue) + abs(absoluteChange) + 1.4
+        return Double(pointCount) * spreadEnergy * 1350
+    }
+
+    private var buyVolume: Double { notionalVolume * buyShare }
+    private var sellVolume: Double { notionalVolume * sellShare }
+    private var volumeDelta: Double { buyVolume - sellVolume }
+    private var imbalancePercent: Double { (buyShare - sellShare) * 100 }
+    private var pressureScore: Double { ((buyShare - 0.5) * 2 + (isUp ? 0.22 : -0.22)).clamped(to: -1...1) }
+
+    private var var95Percent: Double { returnStdDev * 1.65 * 100 }
+    private var cvar95Percent: Double { returnStdDev * 2.10 * 100 }
+
+    private var pulseSeries: [Double] {
+        (0..<20).map { i in
+            let t = Double(i) / 19
+            let wave = 0.30 * sin(t * .pi * 3.2) + 0.22 * cos(t * .pi * 5.4)
+            let bias = (buyShare - 0.5) * 0.85
+            return 0.5 + wave + bias
+        }
+    }
+
+    private var depthSeries: [Double] {
+        (0..<6).map { i in
+            let t = Double(i) / 5
+            let wave = 0.24 * cos(t * .pi * 2.3) + 0.16 * sin(t * .pi * 4.8)
+            return (0.50 + wave + (buyShare - 0.5) * 0.55).clamped(to: 0.10...0.90)
+        }
+    }
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 12) {
+                card(tint: isUp ? Color(red: 0.16, green: 0.36, blue: 0.30) : Color(red: 0.36, green: 0.20, blue: 0.23)) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                Text(displaySymbol)
+                                    .font(.system(size: 16, weight: .semibold, design: .default))
+                                    .foregroundStyle(.white.opacity(0.92))
+
+                                HStack(spacing: 5) {
+                                    Circle()
+                                        .fill(Color(red: 0.48, green: 0.85, blue: 0.69))
+                                        .frame(width: 6, height: 6)
+                                    Text(marketState)
+                                        .font(.system(size: 11, weight: .medium, design: .default))
+                                        .foregroundStyle(.white.opacity(0.56))
+                                }
+                            }
+
+                            Text(lastValue, format: .number.precision(.fractionLength(2)))
+                                .font(.system(size: 35, weight: .semibold, design: .default))
+                                .monospacedDigit()
+                                .foregroundStyle(.white.opacity(0.96))
+                                .hoverInsight(
+                                    InspectorInsight(
+                                        title: "Last Price",
+                                        meaning: "Most recent traded price for the current symbol.",
+                                        expectedRange: "\(number(lowValue)) to \(number(highValue)) for this selected window.",
+                                        action: "If price repeatedly closes outside this band, reassess trend strength and widen risk limits."
+                                    )
+                                )
+
+                            Text(signedPercentText)
+                                .font(.system(size: 14, weight: .medium, design: .default))
+                                .monospacedDigit()
+                                .foregroundStyle(isUp ? Color(red: 0.60, green: 0.82, blue: 0.72) : Color(red: 0.88, green: 0.58, blue: 0.58))
+                        }
+
+                        Spacer(minLength: 10)
+
+                        VolumeBalanceRing(
+                            buyShare: buyShare,
+                            buyColor: Color(red: 0.56, green: 0.84, blue: 0.72),
+                            sellColor: Color(red: 0.86, green: 0.56, blue: 0.56)
+                        )
+                        .frame(width: 60, height: 60)
+                        .hoverInsight(
+                            InspectorInsight(
+                                title: "Buy vs Sell Dominance",
+                                meaning: "Shows the directional split of participation between aggressive buyers and sellers.",
+                                expectedRange: "Healthy two-way markets often sit near 45/55 to 55/45.",
+                                action: "If skew exceeds 65/35 for sustained periods, expect trend continuation or sharp mean-reversion."
+                            )
+                        )
+                    }
+
+                    VStack(spacing: 9) {
+                        HStack {
+                            volumeBadge("Buy", value: buyVolume, color: Color(red: 0.56, green: 0.84, blue: 0.72))
+                            Spacer()
+                            volumeBadge("Sell", value: sellVolume, color: Color(red: 0.86, green: 0.56, blue: 0.56))
+                        }
+
+                        splitVolumeBar(buyShare: buyShare, sellShare: sellShare)
+                            .hoverInsight(
+                                InspectorInsight(
+                                    title: "Volume Split",
+                                    meaning: "Relative participation by side within the active observation window.",
+                                    expectedRange: "Balanced markets cluster around 50/50; strong directional sessions can stretch to 70/30.",
+                                    action: "Outside 70/30, tighten stops and validate with volatility before chasing momentum."
+                                )
+                            )
+                    }
+                }
+                card(tint: Color(red: 0.13, green: 0.20, blue: 0.28)) {
+                    sectionHeader("ORDER FLOW")
+
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Imbalance")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.56))
+                        Spacer()
+                        Text("\(imbalancePercent >= 0 ? "+" : "")\(imbalancePercent.formatted(.number.precision(.fractionLength(1))))%")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(imbalancePercent >= 0 ? Color(red: 0.58, green: 0.84, blue: 0.73) : Color(red: 0.88, green: 0.58, blue: 0.58))
+                            .monospacedDigit()
+                    }
+                    .hoverInsight(
+                        InspectorInsight(
+                            title: "Order Imbalance",
+                            meaning: "Net directional pressure from buying versus selling activity.",
+                            expectedRange: "Normal rotational regimes often stay within -12% to +12%.",
+                            action: "If imbalance persists above +/-20%, favor trend setups until momentum deteriorates."
+                        )
+                    )
+
+                    SparklineArea(data: pulseSeries, color: Color(red: 0.64, green: 0.86, blue: 0.78))
+                        .frame(height: 44)
+                        .hoverInsight(
+                            InspectorInsight(
+                                title: "Flow Pulse",
+                                meaning: "Short-horizon shape of demand/supply acceleration.",
+                                expectedRange: "Smooth undulations indicate stable participation; abrupt spikes imply event-driven flow.",
+                                action: "When pulses become erratic, reduce sizing and wait for confirmation candles."
+                            )
+                        )
+
+                    VStack(spacing: 8) {
+                        ForEach(Array(depthSeries.enumerated()), id: \.offset) { index, value in
+                            depthRow(
+                                label: "L\(index + 1)",
+                                bid: value,
+                                ask: (1 - value).clamped(to: 0.08...0.92)
+                            )
                         }
                     }
-
-                    Text(lastValue, format: .number.precision(.fractionLength(2)))
-                        .font(.system(size: 34, weight: .semibold, design: .default))
-                        .monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.94))
-
-                    Text(signedPercentText)
-                        .font(.system(size: 14, weight: .medium, design: .default))
-                        .monospacedDigit()
-                        .foregroundStyle(isUp ? Color(red: 0.62, green: 0.82, blue: 0.72) : Color(red: 0.86, green: 0.58, blue: 0.58))
                 }
 
-                Spacer()
+                card(tint: Color(red: 0.16, green: 0.14, blue: 0.24)) {
+                    sectionHeader("PRICE STRUCTURE")
 
-                Button {
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
-                        isOpen = false
-                    }
-                } label: {
-                    Image(systemName: "sidebar.right")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.50))
-                        .frame(width: 30, height: 30)
-                        .background(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(Color.white.opacity(0.045))
+                    priceStructureTrack()
+                        .frame(height: 56)
+                        .hoverInsight(
+                            InspectorInsight(
+                                title: "Price Structure Track",
+                                meaning: "Shows current price, VWAP proxy, and median position inside the active high-low range.",
+                                expectedRange: "In balanced markets, last price often rotates around VWAP/median instead of hugging extremes.",
+                                action: "If last price pins at an edge while VWAP lags, favor continuation. If it snaps back to VWAP, fade extension."
+                            )
                         )
-                        .help("Hide inspector")
+
+                    HStack(spacing: 8) {
+                        structureChip("Range", number(highValue - lowValue), tone: Color(red: 0.70, green: 0.80, blue: 0.93))
+                        structureChip("VWAP Drift", signedPercent(vwapDriftPercent), tone: vwapDriftPercent >= 0 ? Color(red: 0.58, green: 0.84, blue: 0.74) : Color(red: 0.86, green: 0.60, blue: 0.60))
+                        structureChip("Z-Score", signedNumber(zScore), tone: abs(zScore) < 1.5 ? Color(red: 0.69, green: 0.78, blue: 0.93) : Color(red: 0.87, green: 0.67, blue: 0.57))
+                    }
+
+                    structureBar(
+                        label: "Range Position",
+                        leftCaption: "Low \(distanceFromLowPercent.formatted(.number.precision(.fractionLength(0))))%",
+                        rightCaption: "High \(distanceToHighPercent.formatted(.number.precision(.fractionLength(0))))%",
+                        value: percentileInRange
+                    )
+                    .hoverInsight(
+                        InspectorInsight(
+                            title: "Range Position",
+                            meaning: "Relative location of price between window low and high.",
+                            expectedRange: "Middle zone 35-65% usually indicates rotational behavior.",
+                            action: "Persistent >80% or <20% suggests directional pressure; switch from mean-reversion to trend tactics."
+                        )
+                    )
+
+                    structureBar(
+                        label: "Mean Reversion Gap",
+                        leftCaption: "Median \(signedPercent(medianDriftPercent))",
+                        rightCaption: "VWAP \(signedPercent(vwapDriftPercent))",
+                        value: ((vwapDriftPercent + 8) / 16).clamped(to: 0...1)
+                    )
+                    .hoverInsight(
+                        InspectorInsight(
+                            title: "Reversion Gap",
+                            meaning: "Distance between current price and central anchors (median and VWAP).",
+                            expectedRange: "Small gaps indicate equilibrium; large sustained gaps imply directional expansion.",
+                            action: "If both drifts widen with strong flow, favor continuation. If flow weakens, prepare for snapback."
+                        )
+                    )
                 }
-                .buttonStyle(.plain)
+
+                card(tint: Color(red: 0.14, green: 0.22, blue: 0.20)) {
+                    sectionHeader("MODEL SIGNALS")
+                    signalBar("Flow", value: flowScore, color: Color(red: 0.54, green: 0.78, blue: 0.68))
+                        .hoverInsight(
+                            InspectorInsight(
+                                title: "Flow Score",
+                                meaning: "Directional participation intensity after normalization.",
+                                expectedRange: "Typical neutral range: 40 to 60.",
+                                action: "Above 65 supports continuation. Below 35 favors defensive or mean-reversion posture."
+                            )
+                        )
+                    signalBar("Stress", value: stressScore, color: Color(red: 0.78, green: 0.60, blue: 0.48))
+                        .hoverInsight(
+                            InspectorInsight(
+                                title: "Stress Score",
+                                meaning: "Compression between volatility and directional conviction.",
+                                expectedRange: "Most stable regimes hold below 55.",
+                                action: "Above 70, reduce leverage and widen slippage assumptions."
+                            )
+                        )
+                    signalBar("Noise", value: noiseScore, color: Color(red: 0.56, green: 0.66, blue: 0.78))
+                        .hoverInsight(
+                            InspectorInsight(
+                                title: "Noise Score",
+                                meaning: "Choppiness ratio of movement that does not contribute to net trend.",
+                                expectedRange: "Efficient trends often remain under 40.",
+                                action: "Above 55, avoid breakout entries unless confirmed by volume expansion."
+                            )
+                        )
+                    signalBar("Confidence", value: confidenceScore, color: Color(red: 0.68, green: 0.76, blue: 0.94))
+                        .hoverInsight(
+                            InspectorInsight(
+                                title: "Confidence Score",
+                                meaning: "Composite certainty from flow quality, volatility and noise.",
+                                expectedRange: "Actionable zone is usually above 55.",
+                                action: "Below 45, prefer smaller position sizes and wait for structure confirmation."
+                            )
+                        )
+                }
+
+                card(tint: Color(red: 0.13, green: 0.18, blue: 0.27)) {
+                    sectionHeader("MOMENTUM & TREND")
+                    gridMetrics([
+                        ("Mean Ret", signedPercent(averageReturn * 100)),
+                        ("Median Ret", signedPercent(medianReturn * 100)),
+                        ("Ret Vol", "\(realizedVolPercent.formatted(.number.precision(.fractionLength(2))))%"),
+                        ("Down Dev", "\(downsideDeviationPercent.formatted(.number.precision(.fractionLength(2))))%"),
+                        ("Avg Move", "\(averageCandleMovePercent.formatted(.number.precision(.fractionLength(2))))%"),
+                        ("Slope", signedPercent(trendSlopePercentPerStep)),
+                        ("Efficiency", "\(Int(efficiencyRatio * 100))"),
+                        ("Trend", trendQuality),
+                        ("Drawdown", "\(maxDrawdownPercent.formatted(.number.precision(.fractionLength(2))))%"),
+                        ("Recovery", "\(recoveryPercentFromLow.formatted(.number.precision(.fractionLength(2))))%"),
+                        ("Sortino*", signedNumber(sortinoLike))
+                    ])
+                }
+
+                card(tint: Color(red: 0.22, green: 0.16, blue: 0.18)) {
+                    sectionHeader("RISK MAP")
+                    gridMetrics([
+                        ("Bias", isUp ? "Bullish Drift" : "Risk-off"),
+                        ("Regime", volatilityPercent > 4.5 ? "Elevated" : "Stable"),
+                        ("Pressure", "\(Int(abs(pressureScore) * 100))"),
+                        ("Imbalance", signedPercent(imbalancePercent)),
+                        ("Net Vol", compactVolume(volumeDelta)),
+                        ("State", marketState),
+                        ("Timeframe", selectedRange.rawValue),
+                        ("Window", "\(windowHours.formatted(.number.precision(.fractionLength(1))))h"),
+                        ("Cadence", "\(sampleCadenceMinutes.formatted(.number.precision(.fractionLength(1))))m"),
+                        ("Liquidity", Int(liquidityProxy).formatted()),
+                        ("Sharpe*", signedNumber(averageReturn / max(returnStdDev, 0.0001))),
+                        ("VaR 95*", "\(var95Percent.formatted(.number.precision(.fractionLength(2))))%"),
+                        ("CVaR 95*", "\(cvar95Percent.formatted(.number.precision(.fractionLength(2))))%")
+                    ])
+                }
             }
-
-            Rectangle()
-                .fill(Color.white.opacity(0.07))
-                .frame(height: 1)
-
-            sectionHeader("INSTRUMENT")
-            VStack(spacing: 9) {
-                metric("Symbol", "BTC / USDT")
-                metric("Venue", "Perp Futures")
-                metric("Session", "London")
-                metric("Timeframe", selectedRange.rawValue)
-                metric("Samples", "\(pointCount)")
-            }
-
-            Rectangle()
-                .fill(Color.white.opacity(0.07))
-                .frame(height: 1)
-
-            sectionHeader("PRICE")
-            VStack(spacing: 9) {
-                metric("Last", number(lastValue))
-                metric("Change", signedAbsoluteText)
-                metric("Change %", signedPercentText)
-                metric("High", number(highValue))
-                metric("Low", number(lowValue))
-                metric("Range", number(highValue - lowValue))
-            }
-
-            Rectangle()
-                .fill(Color.white.opacity(0.07))
-                .frame(height: 1)
-
-            VStack(alignment: .leading, spacing: 10) {
-                sectionHeader("MODEL SIGNALS")
-
-                signalBar("Flow", value: 0.62, color: Color(red: 0.54, green: 0.78, blue: 0.68))
-                signalBar("Stress", value: isUp ? 0.28 : 0.58, color: Color(red: 0.78, green: 0.60, blue: 0.48))
-                signalBar("Noise", value: 0.36, color: Color(red: 0.56, green: 0.66, blue: 0.78))
-                signalBar("Confidence", value: isUp ? 0.66 : 0.42, color: Color(red: 0.68, green: 0.76, blue: 0.94))
-            }
-
-            Rectangle()
-                .fill(Color.white.opacity(0.07))
-                .frame(height: 1)
-
-            sectionHeader("RISK & VOLATILITY")
-            VStack(spacing: 9) {
-                metric("Volatility", "\(volatilityPercent.formatted(.number.precision(.fractionLength(2))))%")
-                metric("Bias", isUp ? "Bullish Drift" : "Risk-off")
-                metric("Regime", volatilityPercent > 4.5 ? "Elevated" : "Stable")
-            }
-
-            Spacer()
+            .padding(.top, 22)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 18)
         }
-        .padding(.top, 24)
-        .padding(.horizontal, 22)
-        .padding(.bottom, 20)
         .background(Color.black.opacity(0.10))
     }
 
@@ -579,23 +1536,46 @@ private struct MarketInspector: View {
         value.formatted(.number.precision(.fractionLength(2)))
     }
 
+    private func signedNumber(_ value: Double) -> String {
+        "\(value >= 0 ? "+" : "")\(value.formatted(.number.precision(.fractionLength(2))))"
+    }
+
+    private func signedPercent(_ value: Double) -> String {
+        "\(value >= 0 ? "+" : "")\(value.formatted(.number.precision(.fractionLength(2))))%"
+    }
+
+    private func compactVolume(_ value: Double) -> String {
+        let absolute = abs(value)
+        let sign = value >= 0 ? "+" : "-"
+        if absolute >= 1_000_000_000 {
+            return "\(sign)\((absolute / 1_000_000_000).formatted(.number.precision(.fractionLength(2))))B"
+        }
+        if absolute >= 1_000_000 {
+            return "\(sign)\((absolute / 1_000_000).formatted(.number.precision(.fractionLength(2))))M"
+        }
+        if absolute >= 1_000 {
+            return "\(sign)\((absolute / 1_000).formatted(.number.precision(.fractionLength(1))))K"
+        }
+        return "\(sign)\(Int(absolute))"
+    }
+
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 10, weight: .semibold, design: .default))
             .tracking(1.8)
-            .foregroundStyle(.white.opacity(0.34))
+            .foregroundStyle(.white.opacity(0.36))
     }
 
     private func metric(_ label: String, _ value: String) -> some View {
         HStack {
             Text(label)
-                .font(.system(size: 13, weight: .regular, design: .default))
-                .foregroundStyle(.white.opacity(0.50))
+                .font(.system(size: 12.5, weight: .regular, design: .default))
+                .foregroundStyle(.white.opacity(0.52))
             Spacer()
             Text(value)
-                .font(.system(size: 13, weight: .medium, design: .default))
+                .font(.system(size: 12.5, weight: .semibold, design: .default))
                 .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.82))
+                .foregroundStyle(.white.opacity(0.86))
         }
     }
 
@@ -604,12 +1584,218 @@ private struct MarketInspector: View {
             HStack {
                 Text(label)
                     .font(.system(size: 12, weight: .medium, design: .default))
-                    .foregroundStyle(.white.opacity(0.54))
+                    .foregroundStyle(.white.opacity(0.58))
                 Spacer()
                 Text("\(Int(value * 100))")
-                    .font(.system(size: 12, weight: .medium, design: .default))
+                    .font(.system(size: 12, weight: .semibold, design: .default))
                     .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.48))
+                    .foregroundStyle(.white.opacity(0.62))
+            }
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.09))
+                    Capsule()
+                        .fill(color.opacity(0.80))
+                        .frame(width: proxy.size.width * value)
+                }
+            }
+            .frame(height: 5)
+        }
+    }
+
+    private func splitVolumeBar(buyShare: Double, sellShare: Double) -> some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            HStack(spacing: 0) {
+                Capsule(style: .continuous)
+                    .fill(Color(red: 0.56, green: 0.84, blue: 0.72).opacity(0.82))
+                    .frame(width: width * buyShare)
+                Capsule(style: .continuous)
+                    .fill(Color(red: 0.86, green: 0.56, blue: 0.56).opacity(0.82))
+                    .frame(width: width * sellShare)
+            }
+            .background(Capsule().fill(Color.white.opacity(0.08)))
+        }
+        .frame(height: 7)
+    }
+
+    private func volumeBadge(_ label: String, value: Double, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(1.2)
+                .foregroundStyle(color.opacity(0.95))
+            Text(compactVolume(value))
+                .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.85))
+        }
+    }
+
+    private func depthRow(label: String, bid: Double, ask: Double) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.38))
+                .frame(width: 20, alignment: .leading)
+
+            GeometryReader { proxy in
+                let width = proxy.size.width
+                ZStack {
+                    Capsule()
+                        .fill(Color.white.opacity(0.06))
+
+                    HStack(spacing: 0) {
+                        Capsule()
+                            .fill(Color(red: 0.56, green: 0.84, blue: 0.72).opacity(0.72))
+                            .frame(width: width * bid)
+                        Spacer(minLength: 0)
+                        Capsule()
+                            .fill(Color(red: 0.86, green: 0.56, blue: 0.56).opacity(0.72))
+                            .frame(width: width * ask)
+                    }
+                }
+            }
+            .frame(height: 4)
+        }
+    }
+
+    private func gridMetrics(_ pairs: [(String, String)]) -> some View {
+        VStack(spacing: 8) {
+            ForEach(Array(stride(from: 0, to: pairs.count, by: 2)), id: \.self) { idx in
+                HStack(spacing: 10) {
+                    metricTile(label: pairs[idx].0, value: pairs[idx].1)
+                    if idx + 1 < pairs.count {
+                        metricTile(label: pairs[idx + 1].0, value: pairs[idx + 1].1)
+                    } else {
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func metricTile(label: String, value: String) -> some View {
+        let tile = VStack(alignment: .leading, spacing: 3) {
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(1.2)
+                .foregroundStyle(.white.opacity(0.36))
+            Text(value)
+                .font(.system(size: 13, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.86))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+        )
+
+        if let insight = insightForMetric(label: label, value: value) {
+            tile.hoverInsight(insight)
+        } else {
+            tile
+        }
+    }
+
+    private func priceStructureTrack() -> some View {
+        GeometryReader { proxy in
+            let span = max(highValue - lowValue, 0.0001)
+            let lastPosition = ((lastValue - lowValue) / span).clamped(to: 0...1)
+            let vwapPosition = ((vwapProxy - lowValue) / span).clamped(to: 0...1)
+            let medianPosition = ((medianPrice - lowValue) / span).clamped(to: 0...1)
+            let usableWidth = max(proxy.size.width - 12, 1)
+
+            VStack(spacing: 8) {
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(height: 8)
+
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.56, green: 0.82, blue: 0.74).opacity(0.52),
+                                    Color(red: 0.86, green: 0.62, blue: 0.62).opacity(0.52)
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: usableWidth * lastPosition, height: 8)
+
+                    markerDot(position: vwapPosition, color: Color(red: 0.76, green: 0.86, blue: 0.94), width: usableWidth)
+                    markerDot(position: medianPosition, color: Color(red: 0.93, green: 0.80, blue: 0.62), width: usableWidth)
+                    markerDot(position: lastPosition, color: .white.opacity(0.95), width: usableWidth, radius: 4.5)
+                }
+                .padding(.horizontal, 6)
+
+                HStack(spacing: 10) {
+                    structureLegend(name: "Low", value: number(lowValue), tone: .white.opacity(0.55))
+                    structureLegend(name: "Median", value: number(medianPrice), tone: Color(red: 0.93, green: 0.80, blue: 0.62))
+                    structureLegend(name: "VWAP*", value: number(vwapProxy), tone: Color(red: 0.76, green: 0.86, blue: 0.94))
+                    structureLegend(name: "High", value: number(highValue), tone: .white.opacity(0.55))
+                }
+            }
+        }
+    }
+
+    private func markerDot(position: Double, color: Color, width: CGFloat, radius: CGFloat = 3.5) -> some View {
+        Circle()
+            .fill(color)
+            .frame(width: radius * 2, height: radius * 2)
+            .overlay(Circle().stroke(Color.black.opacity(0.25), lineWidth: 0.5))
+            .offset(x: (width * position) - radius)
+    }
+
+    private func structureLegend(name: String, value: String, tone: Color) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(name.uppercased())
+                .font(.system(size: 8, weight: .semibold))
+                .tracking(1.0)
+                .foregroundStyle(.white.opacity(0.38))
+            Text(value)
+                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(tone)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func structureChip(_ label: String, _ value: String, tone: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label.uppercased())
+                .font(.system(size: 8.5, weight: .semibold))
+                .tracking(1.1)
+                .foregroundStyle(.white.opacity(0.38))
+            Text(value)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(tone)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+        )
+    }
+
+    private func structureBar(label: String, leftCaption: String, rightCaption: String, value: Double) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(label)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.60))
+                Spacer()
+                Text("\(Int(value * 100))%")
+                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.56))
             }
 
             GeometryReader { proxy in
@@ -617,41 +1803,295 @@ private struct MarketInspector: View {
                     Capsule()
                         .fill(Color.white.opacity(0.08))
                     Capsule()
-                        .fill(color.opacity(0.76))
-                        .frame(width: proxy.size.width * value)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.62, green: 0.84, blue: 0.77).opacity(0.78),
+                                    Color(red: 0.82, green: 0.65, blue: 0.68).opacity(0.70)
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: proxy.size.width * value.clamped(to: 0...1))
                 }
             }
-            .frame(height: 4)
+            .frame(height: 6)
+
+            HStack {
+                Text(leftCaption)
+                    .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.40))
+                Spacer()
+                Text(rightCaption)
+                    .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.40))
+            }
+        }
+    }
+
+    private func card<Content: View>(tint: Color, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            content()
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.03),
+                            tint.opacity(0.16),
+                            Color.black.opacity(0.08)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
+    }
+
+    private func insightForMetric(label: String, value: String) -> InspectorInsight? {
+        switch label {
+        case "Last":
+            return InspectorInsight(
+                title: "Last Price",
+                meaning: "Latest traded value for the active symbol in this timeframe.",
+                expectedRange: "\(number(lowValue)) to \(number(highValue)) inside this window.",
+                action: "If price sustains beyond this range, treat it as a regime shift and re-anchor levels."
+            )
+        case "Change", "Change %":
+            return InspectorInsight(
+                title: "Session Change",
+                meaning: "Net movement from window start to current price.",
+                expectedRange: "Most sessions rotate inside +/-2% to +/-4% depending on asset beta.",
+                action: "Above the normal band, confirm with volume and reduce mean-reversion bias."
+            )
+        case "Vol", "Ret Vol", "Down Dev":
+            return InspectorInsight(
+                title: "Volatility",
+                meaning: "Magnitude and dispersion of returns in the current sample.",
+                expectedRange: "Low-vol regimes typically stay compressed while high-vol regimes expand rapidly.",
+                action: "When vol spikes, lower leverage and widen execution tolerance."
+            )
+        case "Flow", "Imbalance", "Pressure":
+            return InspectorInsight(
+                title: "Order Pressure",
+                meaning: "Directional participation and dominance between buy and sell activity.",
+                expectedRange: "Balanced tape usually lives near neutral; persistent extremes imply one-way flow.",
+                action: "Use sustained extremes for continuation setups, fading only after momentum decay."
+            )
+        case "VaR 95*", "CVaR 95*":
+            return InspectorInsight(
+                title: "Tail Risk Proxy",
+                meaning: "Estimated downside move at high-confidence loss scenarios.",
+                expectedRange: "Lower is generally safer; expansion indicates stress and wider expected tails.",
+                action: "If tail-risk climbs quickly, reduce position size and shorten hold horizon."
+            )
+        case "Z-Score":
+            return InspectorInsight(
+                title: "Standardized Distance",
+                meaning: "How far price is from its local mean measured in standard deviations.",
+                expectedRange: "Most observations remain within -2 to +2.",
+                action: "Outside +/-2, prepare for either continuation breakout or snapback depending on flow."
+            )
+        case "Liquidity":
+            return InspectorInsight(
+                title: "Liquidity Proxy",
+                meaning: "Approximate tradability combining sample density and spread/volatility energy.",
+                expectedRange: "Higher values imply cleaner fills and lower slippage risk.",
+                action: "When liquidity proxy drops, avoid large market orders and stagger entries."
+            )
+        default:
+            return InspectorInsight(
+                title: label,
+                meaning: "Context metric for \(displaySymbol) over the selected \(selectedRange.rawValue) window.",
+                expectedRange: "Ranges are asset-dependent and should be interpreted against recent rolling history.",
+                action: "If this value diverges sharply from recent norms, review risk and execution assumptions."
+            )
         }
     }
 }
 
-private struct CollapsedInspectorRail: View {
-    @Binding var isOpen: Bool
+private struct VolumeBalanceRing: View {
+    let buyShare: Double
+    let buyColor: Color
+    let sellColor: Color
 
     var body: some View {
-        VStack {
-            Button {
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
-                    isOpen = true
-                }
-            } label: {
-                Image(systemName: "sidebar.left")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.56))
-                    .frame(width: 30, height: 30)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(Color.white.opacity(0.045))
-                    )
-                    .help("Show inspector")
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 22)
+        ZStack {
+            Circle()
+                .stroke(Color.white.opacity(0.08), lineWidth: 8)
 
-            Spacer()
+            Circle()
+                .trim(from: 0, to: buyShare)
+                .stroke(
+                    buyColor,
+                    style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+
+            Circle()
+                .trim(from: buyShare, to: 1)
+                .stroke(
+                    sellColor.opacity(0.85),
+                    style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+
+            Text("\(Int(buyShare * 100))")
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.86))
         }
-        .background(Color.black.opacity(0.08))
+    }
+}
+
+private struct SparklineArea: View {
+    let data: [Double]
+    let color: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            let points = normalizedPoints(in: proxy.size)
+            ZStack {
+                Path { path in
+                    guard let first = points.first else { return }
+                    path.move(to: CGPoint(x: first.x, y: proxy.size.height))
+                    for point in points {
+                        path.addLine(to: point)
+                    }
+                    if let last = points.last {
+                        path.addLine(to: CGPoint(x: last.x, y: proxy.size.height))
+                    }
+                    path.closeSubpath()
+                }
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            color.opacity(0.26),
+                            color.opacity(0.04)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
+                Path { path in
+                    guard let first = points.first else { return }
+                    path.move(to: first)
+                    for point in points.dropFirst() {
+                        path.addLine(to: point)
+                    }
+                }
+                .stroke(color.opacity(0.92), style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+            }
+        }
+    }
+
+    private func normalizedPoints(in size: CGSize) -> [CGPoint] {
+        guard data.count > 1 else { return [] }
+        let minValue = data.min() ?? 0
+        let maxValue = data.max() ?? 1
+        let span = max(maxValue - minValue, 0.0001)
+
+        return data.enumerated().map { index, value in
+            let x = CGFloat(index) / CGFloat(data.count - 1) * size.width
+            let norm = (value - minValue) / span
+            let y = size.height - CGFloat(norm) * size.height
+            return CGPoint(x: x, y: y)
+        }
+    }
+}
+
+private struct InspectorInsight {
+    let title: String
+    let meaning: String
+    let expectedRange: String
+    let action: String
+}
+
+private struct HoverInsightModifier: ViewModifier {
+    let insight: InspectorInsight
+    var delaySeconds: Double = 1.2
+
+    @State private var isHovering = false
+    @State private var isPresented = false
+    @State private var revealTask: Task<Void, Never>?
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                isHovering = hovering
+
+                if hovering {
+                    revealTask?.cancel()
+                    revealTask = Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+                        if !Task.isCancelled && isHovering {
+                            withAnimation(Motion.micro) {
+                                isPresented = true
+                            }
+                        }
+                    }
+                } else {
+                    revealTask?.cancel()
+                    revealTask = nil
+                    withAnimation(Motion.micro) {
+                        isPresented = false
+                    }
+                }
+            }
+            .popover(isPresented: $isPresented, arrowEdge: .top) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(insight.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.95))
+
+                    insightRow("Meaning", insight.meaning)
+                    insightRow("Expected", insight.expectedRange)
+                    insightRow("Action", insight.action)
+                }
+                .padding(12)
+                .frame(width: 300, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(red: 0.10, green: 0.12, blue: 0.16))
+                )
+            }
+            .onDisappear {
+                revealTask?.cancel()
+                revealTask = nil
+            }
+    }
+
+    @ViewBuilder
+    private func insightRow(_ title: String, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title.uppercased())
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(1.1)
+                .foregroundStyle(.white.opacity(0.44))
+            Text(detail)
+                .font(.system(size: 11.5, weight: .regular))
+                .foregroundStyle(.white.opacity(0.82))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private extension View {
+    func hoverInsight(_ insight: InspectorInsight, delaySeconds: Double = 1.2) -> some View {
+        modifier(HoverInsightModifier(insight: insight, delaySeconds: delaySeconds))
+    }
+}
+
+private extension Double {
+    func clamped(to range: ClosedRange<Double>) -> Double {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }
 
@@ -694,6 +2134,8 @@ private struct AmbientBackground: View {
 }
 
 private enum ChartRange: String, CaseIterable, Identifiable {
+    case twentyFiveMinutes = "25m"
+    case hour = "1H"
     case day = "1D"
     case week = "1W"
     case month = "1M"
@@ -704,6 +2146,8 @@ private enum ChartRange: String, CaseIterable, Identifiable {
 
     var points: Int {
         switch self {
+        case .twentyFiveMinutes: return 180
+        case .hour: return 72
         case .day: return 64
         case .week: return 180
         case .month: return 240
@@ -715,6 +2159,18 @@ private enum ChartRange: String, CaseIterable, Identifiable {
     func slice(from data: [GraphPoint]) -> [GraphPoint] {
         Array(data.suffix(min(points, data.count)))
     }
+
+    var marketTimeRange: MarketTimeRange {
+        switch self {
+        case .twentyFiveMinutes: return .twentyFiveMinutes
+        case .hour: return .hour
+        case .day: return .day
+        case .week: return .week
+        case .month: return .month
+        case .quarter: return .quarter
+        case .year: return .year
+        }
+    }
 }
 
 private struct GraphPoint: Identifiable {
@@ -722,7 +2178,7 @@ private struct GraphPoint: Identifiable {
     let date: Date
     let value: Double
 
-    var id: Int { index }
+    var id: TimeInterval { date.timeIntervalSince1970 }
 }
 
 private struct WindowChromeConfigurator: NSViewRepresentable {

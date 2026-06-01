@@ -14,7 +14,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "8080DE1C6EA3D3599782A54D"
+               BlueprintIdentifier = "50259BED7B0E2DB09F788091"
                BuildableName = "Aevium.app"
                BlueprintName = "Aevium"
                ReferencedContainer = "container:Aevium.xcodeproj">
@@ -30,7 +30,7 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "8080DE1C6EA3D3599782A54D"
+            BlueprintIdentifier = "50259BED7B0E2DB09F788091"
             BuildableName = "Aevium.app"
             BlueprintName = "Aevium"
             ReferencedContainer = "container:Aevium.xcodeproj">
@@ -53,7 +53,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "8080DE1C6EA3D3599782A54D"
+            BlueprintIdentifier = "50259BED7B0E2DB09F788091"
             BuildableName = "Aevium.app"
             BlueprintName = "Aevium"
             ReferencedContainer = "container:Aevium.xcodeproj">
@@ -70,7 +70,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "8080DE1C6EA3D3599782A54D"
+            BlueprintIdentifier = "50259BED7B0E2DB09F788091"
             BuildableName = "Aevium.app"
             BlueprintName = "Aevium"
             ReferencedContainer = "container:Aevium.xcodeproj">

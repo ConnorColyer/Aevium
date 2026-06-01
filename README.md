@@ -2,24 +2,20 @@
 
 dont open source ts alex 🙏 
 sending to the main man - alex
-## CSV format
-
-Expected columns:
-
-`symbol,date,open,high,low,close,volume`
-
-Accepted date formats:
-
-- `yyyy-MM-dd`
-- `yyyyMMdd`
 
 ## Project notes
 
 - Main app entry: `Aevium/App/AeviumApp.swift`
 - Data layer: `Aevium/Data/*`
 - UI layer: `Aevium/UI/*`
-- View model: `Aevium/ViewModels/DashboardViewModel.swift`
+- View model: `Aevium/ViewModels/AeviumMarketViewModel.swift`
 - Optional project regeneration script: `generate_project.rb`
+
+## Live data
+
+- Crypto uses Binance public endpoints and works without a key.
+- Equities use Finnhub's free tier. Add the key in Aevium settings; it is stored locally in the macOS Keychain and is not written into the repository.
+- The app stores viewport-aware line data in SQLite with WAL mode and rolls old dense points into coarser local aggregates.
 
 ## Versioning
 
