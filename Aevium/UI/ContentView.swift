@@ -254,56 +254,45 @@ private struct FloatingPriceTicker: View {
                 isOpen = true
             }
         } label: {
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(
-                        isUptrend
-                            ? Color(red: 0.72, green: 0.86, blue: 0.83)
-                            : Color(red: 0.90, green: 0.69, blue: 0.72)
-                    )
-                    .frame(width: 8, height: 8)
-
-                VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(symbol)
                         .font(.system(size: 11, weight: .medium, design: .default))
-                        .foregroundStyle(.white.opacity(0.58))
+                        .foregroundStyle(.white.opacity(0.52))
                     Text(lastValue, format: .number.precision(.fractionLength(2)))
-                        .font(.system(size: 20, weight: .semibold, design: .default))
+                        .font(.system(size: 19, weight: .semibold, design: .default))
                         .foregroundStyle(.white.opacity(0.96))
                 }
 
-                VStack(alignment: .trailing, spacing: 2) {
+                VStack(alignment: .trailing, spacing: 3) {
                     Text("LIVE")
-                        .font(.system(size: 10, weight: .bold, design: .default))
-                        .foregroundStyle(.white.opacity(0.44))
+                        .font(.system(size: 10, weight: .semibold, design: .default))
+                        .foregroundStyle(.white.opacity(0.42))
                     Text("\(percentChange >= 0 ? "+" : "")\(percentChange, format: .number.precision(.fractionLength(2)))%")
-                        .font(.system(size: 14, weight: .semibold, design: .default))
+                        .font(.system(size: 13, weight: .semibold, design: .default))
                         .foregroundStyle(
                             isUptrend
                                 ? Color(red: 0.72, green: 0.86, blue: 0.83)
                                 : Color(red: 0.90, green: 0.69, blue: 0.72)
                         )
                 }
+
+                Image(systemName: "sidebar.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .padding(.leading, 2)
             }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
             .background(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(.ultraThinMaterial.opacity(0.58))
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.ultraThinMaterial.opacity(0.50))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.white.opacity(0.14), lineWidth: 1)
                     )
             )
-            .shadow(color: Color.black.opacity(0.24), radius: 12, x: 0, y: 7)
-            .overlay(alignment: .trailing) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(
-                        .white.opacity(0.56)
-                    )
-                    .padding(.trailing, 8)
-            }
+            .shadow(color: Color.black.opacity(0.20), radius: 10, x: 0, y: 6)
         }
         .buttonStyle(.plain)
     }
@@ -448,11 +437,16 @@ private struct SideInfoPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 7) {
-                Text("$ \(Int(lastValue))")
-                    .font(.system(size: 50, weight: .semibold, design: .default))
+                Text("Market Snapshot")
+                    .font(.system(size: 12, weight: .medium, design: .default))
+                    .foregroundStyle(.white.opacity(0.46))
+
+                Text(lastValue, format: .currency(code: "USD").precision(.fractionLength(0)))
+                    .font(.system(size: 40, weight: .semibold, design: .default))
                     .foregroundStyle(.white.opacity(0.95))
+
                 Text("\(absoluteChange >= 0 ? "+" : "")\(percentChange, format: .number.precision(.fractionLength(2)))%")
-                    .font(.system(size: 18, weight: .semibold, design: .default))
+                    .font(.system(size: 16, weight: .semibold, design: .default))
                     .foregroundStyle(
                         isUptrend
                             ? Color(red: 0.72, green: 0.86, blue: 0.83)
@@ -461,21 +455,15 @@ private struct SideInfoPanel: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
-            .padding(.bottom, 14)
+            .padding(.bottom, 12)
 
             sideDivider
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
-                    sectionAISignal
-                    sideDivider
                     sectionOverview
                     sideDivider
-                    sectionTrend
-                    sideDivider
-                    sectionMomentum
-                    sideDivider
-                    sectionVolatility
+                    sectionSignal
                 }
                 .padding(.horizontal, 16)
             }
@@ -488,15 +476,15 @@ private struct SideInfoPanel: View {
         Rectangle()
             .fill(Color.white.opacity(0.07))
             .frame(height: 1)
-            .padding(.vertical, 12)
+            .padding(.vertical, 10)
     }
 
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 11, weight: .semibold, design: .default))
-            .tracking(1.6)
+            .font(.system(size: 11, weight: .medium, design: .default))
+            .tracking(1.1)
             .foregroundStyle(.white.opacity(0.42))
-            .padding(.bottom, 10)
+            .padding(.bottom, 8)
     }
 
     private func statRow(_ name: String, _ value: String, valueColor: Color) -> some View {
@@ -509,55 +497,26 @@ private struct SideInfoPanel: View {
                 .font(.system(size: 14, weight: .medium, design: .default))
                 .foregroundStyle(valueColor.opacity(0.92))
         }
-        .padding(.bottom, 8)
-    }
-
-    private var sectionAISignal: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionTitle("AI SIGNAL")
-            statRow("Signal", isUptrend ? "UP" : "DOWN", valueColor: isUptrend ? .mint : .red)
-            statRow("Confidence", "\(Int(confidence))%", valueColor: .white.opacity(0.88))
-            statRow("Stress", "\(Int(100 - confidence))", valueColor: .orange.opacity(0.9))
-        }
+        .padding(.bottom, 9)
     }
 
     private var sectionOverview: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionTitle("OVERVIEW")
-            statRow("24h Change", "\(percentChange.formatted(.number.precision(.fractionLength(2))))%", valueColor: isUptrend ? .mint : .red)
-            statRow("24h High", "$\(Int(high))", valueColor: .mint.opacity(0.9))
-            statRow("24h Low", "$\(Int(low))", valueColor: .red.opacity(0.85))
-            statRow("24h Volume", volume.formatted(.number.notation(.compactName)), valueColor: .white.opacity(0.9))
+            statRow("Last", lastValue.formatted(.currency(code: "USD").precision(.fractionLength(0))), valueColor: .white)
+            statRow("24h High", high.formatted(.currency(code: "USD").precision(.fractionLength(0))), valueColor: .white.opacity(0.86))
+            statRow("24h Low", low.formatted(.currency(code: "USD").precision(.fractionLength(0))), valueColor: .white.opacity(0.86))
+            statRow("Volume", volume.formatted(.number.notation(.compactName)), valueColor: .white.opacity(0.86))
         }
     }
 
-    private var sectionTrend: some View {
+    private var sectionSignal: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionTitle("TREND")
-            statRow("EMA 9", "$\(Int(lastValue - 14))", valueColor: Color(red: 0.56, green: 0.74, blue: 0.96))
-            statRow("EMA 21", "$\(Int(lastValue - 36))", valueColor: Color(red: 0.65, green: 0.56, blue: 0.94))
-            statRow("Cross", isUptrend ? "Golden ↑" : "Death ↓", valueColor: isUptrend ? .mint : .red)
-        }
-    }
-
-    private var sectionMomentum: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionTitle("MOMENTUM")
-            statRow("RSI (14)", "\(52 + Int(absoluteChange * 1.9))", valueColor: .white.opacity(0.9))
-            statRow("MACD", absoluteChange.formatted(.number.precision(.fractionLength(2))), valueColor: isUptrend ? .mint : .red)
-            statRow("Signal", (absoluteChange * 0.8).formatted(.number.precision(.fractionLength(2))), valueColor: .white.opacity(0.7))
-        }
-    }
-
-    private var sectionVolatility: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionTitle("VOLATILITY")
-            statRow(
-                "Band Width",
-                "\(((high - low) / max(1, lastValue) * 100).formatted(.number.precision(.fractionLength(2))))%",
-                valueColor: .blue.opacity(0.9)
-            )
-            statRow("Data Points", "\(pointsCount)", valueColor: .white.opacity(0.82))
+            sectionTitle("SIGNAL")
+            statRow("Direction", isUptrend ? "Uptrend" : "Downtrend", valueColor: isUptrend ? .mint : .red)
+            statRow("Confidence", "\(Int(confidence))%", valueColor: .white)
+            statRow("Stress", "\(Int(100 - confidence))", valueColor: .white.opacity(0.86))
+            statRow("Points", "\(pointsCount)", valueColor: .white.opacity(0.86))
         }
     }
 }
