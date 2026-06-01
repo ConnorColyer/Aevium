@@ -2,6 +2,12 @@ import SwiftUI
 
 @main
 struct AeviumApp: App {
+    init() {
+        UserDefaults.standard.register(defaults: [
+            "AppleMenuBarVisibleInFullscreen": false
+        ])
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
