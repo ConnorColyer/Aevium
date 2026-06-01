@@ -4,6 +4,23 @@ import Charts
 
 struct ContentView: View {
     @State private var points = Self.makeSeries()
+    @State private var selectedRange: ChartRange = .week
+    @State private var isInfoOpen = true
+
+    private var visiblePoints: [GraphPoint] {
+        selectedRange.slice(from: points)
+    }
+
+    private var firstValue: Double { visiblePoints.first?.value ?? 0 }
+    private var lastValue: Double { visiblePoints.last?.value ?? 0 }
+    private var absoluteChange: Double { lastValue - firstValue }
+    private var percentChange: Double {
+        guard firstValue != 0 else { return 0 }
+        return (absoluteChange / firstValue) * 100
+    }
+    private var isUptrend: Bool { absoluteChange >= 0 }
+    private var dayHigh: Double { visiblePoints.map(\.value).max() ?? 0 }
+    private var dayLow: Double { visiblePoints.map(\.value).min() ?? 0 }
 
     var body: some View {
         TimelineView(.animation) { context in
@@ -87,10 +104,78 @@ struct ContentView: View {
 
                     GrainOverlay()
 
-                    FocusedPriceGraph(points: points, time: t)
-                        .padding(.top, 58)
-                        .padding(.horizontal, 18)
-                        .padding(.bottom, 14)
+                    let drawerWidth = min(320, max(278, size.width * 0.19))
+
+                    FocusedPriceGraph(
+                        points: visiblePoints,
+                        time: t,
+                        isUptrend: isUptrend
+                    )
+                    .padding(.leading, 14)
+                    .padding(.top, 50)
+                    .padding(.bottom, 14)
+                    .padding(.trailing, isInfoOpen ? drawerWidth + 26 : 20)
+                    .animation(.spring(response: 0.34, dampingFraction: 0.86), value: isInfoOpen)
+
+                    HStack(spacing: 0) {
+                        Spacer()
+
+                        if isInfoOpen {
+                            SideInfoPanel(
+                                lastValue: lastValue,
+                                percentChange: percentChange,
+                                high: dayHigh,
+                                low: dayLow,
+                                volume: Double(visiblePoints.count) * 97.3,
+                                absoluteChange: absoluteChange,
+                                pointsCount: visiblePoints.count
+                            )
+                            .frame(width: drawerWidth)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(.ultraThinMaterial.opacity(0.32))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                                    )
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .shadow(color: Color.black.opacity(0.24), radius: 18, x: -2, y: 10)
+                            .padding(.trailing, 12)
+                            .padding(.vertical, 16)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                        }
+                    }
+                    .animation(.spring(response: 0.34, dampingFraction: 0.86), value: isInfoOpen)
+
+                    if !isInfoOpen {
+                        VStack {
+                            HStack {
+                                Spacer()
+                                FloatingPriceTicker(
+                                    isOpen: $isInfoOpen,
+                                    symbol: "BTC / USDT",
+                                    lastValue: lastValue,
+                                    percentChange: percentChange,
+                                    isUptrend: isUptrend
+                                )
+                                .padding(.trailing, 24)
+                                .padding(.top, 68)
+                            }
+                            Spacer()
+                        }
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
+
+                    VStack {
+                        HStack {
+                            Spacer()
+                            InfoDrawerTab(isOpen: $isInfoOpen)
+                                .padding(.top, 16)
+                                .padding(.trailing, 18)
+                        }
+                        Spacer()
+                    }
                 }
                 .ignoresSafeArea()
                 .background(WindowChromeConfigurator())
@@ -123,6 +208,132 @@ struct ContentView: View {
     }
 }
 
+private struct InfoDrawerTab: View {
+    @Binding var isOpen: Bool
+
+    var body: some View {
+        Button {
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                isOpen.toggle()
+            }
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: "sidebar.right")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(isOpen ? "Hide Info" : "Show Info")
+                    .font(.system(size: 12, weight: .semibold, design: .default))
+                Image(systemName: isOpen ? "chevron.right" : "chevron.left")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .foregroundStyle(.white.opacity(0.76))
+            .padding(.horizontal, 11)
+            .padding(.vertical, 8)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(.ultraThinMaterial.opacity(0.52))
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct FloatingPriceTicker: View {
+    @Binding var isOpen: Bool
+    let symbol: String
+    let lastValue: Double
+    let percentChange: Double
+    let isUptrend: Bool
+
+    var body: some View {
+        Button {
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                isOpen = true
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(
+                        isUptrend
+                            ? Color(red: 0.72, green: 0.86, blue: 0.83)
+                            : Color(red: 0.90, green: 0.69, blue: 0.72)
+                    )
+                    .frame(width: 8, height: 8)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(symbol)
+                        .font(.system(size: 11, weight: .medium, design: .default))
+                        .foregroundStyle(.white.opacity(0.58))
+                    Text(lastValue, format: .number.precision(.fractionLength(2)))
+                        .font(.system(size: 20, weight: .semibold, design: .default))
+                        .foregroundStyle(.white.opacity(0.96))
+                }
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("LIVE")
+                        .font(.system(size: 10, weight: .bold, design: .default))
+                        .foregroundStyle(.white.opacity(0.44))
+                    Text("\(percentChange >= 0 ? "+" : "")\(percentChange, format: .number.precision(.fractionLength(2)))%")
+                        .font(.system(size: 14, weight: .semibold, design: .default))
+                        .foregroundStyle(
+                            isUptrend
+                                ? Color(red: 0.72, green: 0.86, blue: 0.83)
+                                : Color(red: 0.90, green: 0.69, blue: 0.72)
+                        )
+                }
+            }
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(.ultraThinMaterial.opacity(0.58))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                    )
+            )
+            .shadow(color: Color.black.opacity(0.24), radius: 12, x: 0, y: 7)
+            .overlay(alignment: .trailing) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(
+                        .white.opacity(0.56)
+                    )
+                    .padding(.trailing, 8)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private enum ChartRange: String, CaseIterable, Identifiable {
+    case day = "1D"
+    case week = "1W"
+    case month = "1M"
+    case quarter = "3M"
+    case year = "1Y"
+
+    var id: String { rawValue }
+
+    var points: Int {
+        switch self {
+        case .day: return 24
+        case .week: return 24 * 7
+        case .month: return 24 * 30
+        case .quarter: return 24 * 90
+        case .year: return 24 * 300
+        }
+    }
+
+    func slice(from data: [GraphPoint]) -> [GraphPoint] {
+        let count = min(points, data.count)
+        return Array(data.suffix(count))
+    }
+}
+
 private struct GraphPoint: Identifiable {
     let index: Int
     let date: Date
@@ -134,6 +345,7 @@ private struct GraphPoint: Identifiable {
 private struct FocusedPriceGraph: View {
     let points: [GraphPoint]
     let time: TimeInterval
+    let isUptrend: Bool
 
     var body: some View {
         Chart(points) { point in
@@ -145,8 +357,8 @@ private struct FocusedPriceGraph: View {
             .foregroundStyle(
                 LinearGradient(
                     colors: [
-                        Color(red: 0.31, green: 0.47, blue: 0.70).opacity(0.18),
-                        Color(red: 0.22, green: 0.40, blue: 0.34).opacity(0.11),
+                        Color(red: 0.50, green: 0.64, blue: 0.82).opacity(0.15),
+                        Color(red: 0.38, green: 0.54, blue: 0.70).opacity(0.08),
                         Color.clear
                     ],
                     startPoint: .top,
@@ -159,36 +371,49 @@ private struct FocusedPriceGraph: View {
                 y: .value("Price", point.value)
             )
             .interpolationMethod(.catmullRom)
-            .lineStyle(.init(lineWidth: 2.2))
+            .lineStyle(.init(lineWidth: 2.1, lineCap: .round, lineJoin: .round))
             .foregroundStyle(
                 LinearGradient(
                     colors: [
-                        Color(red: 0.60, green: 0.74, blue: 0.93),
-                        Color(red: 0.55, green: 0.84, blue: 0.77)
+                        isUptrend
+                            ? Color(red: 0.76, green: 0.84, blue: 0.94)
+                            : Color(red: 0.91, green: 0.71, blue: 0.73),
+                        isUptrend
+                            ? Color(red: 0.64, green: 0.77, blue: 0.89)
+                            : Color(red: 0.86, green: 0.63, blue: 0.66)
                     ],
                     startPoint: .leading,
                     endPoint: .trailing
                 )
             )
+
+            if let last = points.last {
+                PointMark(
+                    x: .value("Time", last.date),
+                    y: .value("Price", last.value)
+                )
+                .symbolSize(52)
+                .foregroundStyle(.white.opacity(0.92))
+            }
         }
         .chartLegend(.hidden)
         .chartYAxis {
-            AxisMarks(position: .leading, values: .automatic(desiredCount: 5)) { _ in
+            AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { _ in
                 AxisGridLine(stroke: .init(lineWidth: 0.45, dash: [2.5, 4]))
-                    .foregroundStyle(.white.opacity(0.10))
+                    .foregroundStyle(.white.opacity(0.12))
                 AxisValueLabel()
-                    .foregroundStyle(.white.opacity(0.30))
+                    .foregroundStyle(.white.opacity(0.34))
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
             }
         }
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 6)) { _ in
+            AxisMarks(values: .automatic(desiredCount: 5)) { _ in
                 AxisGridLine(stroke: .init(lineWidth: 0.4))
-                    .foregroundStyle(.white.opacity(0.06))
+                    .foregroundStyle(.white.opacity(0.04))
                 AxisTick(stroke: .init(lineWidth: 0.5))
-                    .foregroundStyle(.white.opacity(0.18))
+                    .foregroundStyle(.white.opacity(0.20))
                 AxisValueLabel()
-                    .foregroundStyle(.white.opacity(0.28))
+                    .foregroundStyle(.white.opacity(0.34))
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
             }
         }
@@ -199,25 +424,140 @@ private struct FocusedPriceGraph: View {
         .overlay(alignment: .topTrailing) {
             if let last = points.last {
                 Text(last.value, format: .number.precision(.fractionLength(2)))
-                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.66))
+                    .font(.system(size: 13, weight: .semibold, design: .default))
+                    .foregroundStyle(.white.opacity(0.56))
                     .padding(.top, 2)
                     .padding(.trailing, 6)
             }
         }
-        .overlay {
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [.clear, .white.opacity(0.04), .clear],
-                        startPoint: .leading,
-                        endPoint: .trailing
+    }
+}
+
+private struct SideInfoPanel: View {
+    let lastValue: Double
+    let percentChange: Double
+    let high: Double
+    let low: Double
+    let volume: Double
+    let absoluteChange: Double
+    let pointsCount: Int
+
+    private var isUptrend: Bool { absoluteChange >= 0 }
+    private var confidence: Double { min(97, max(3, 50 + absoluteChange * 1.8)) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 7) {
+                Text("$ \(Int(lastValue))")
+                    .font(.system(size: 50, weight: .semibold, design: .default))
+                    .foregroundStyle(.white.opacity(0.95))
+                Text("\(absoluteChange >= 0 ? "+" : "")\(percentChange, format: .number.precision(.fractionLength(2)))%")
+                    .font(.system(size: 18, weight: .semibold, design: .default))
+                    .foregroundStyle(
+                        isUptrend
+                            ? Color(red: 0.72, green: 0.86, blue: 0.83)
+                            : Color(red: 0.90, green: 0.69, blue: 0.72)
                     )
-                )
-                .rotationEffect(.degrees(-13))
-                .offset(x: sin(time * 0.18) * 220)
-                .blendMode(.softLight)
-                .allowsHitTesting(false)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 14)
+
+            sideDivider
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    sectionAISignal
+                    sideDivider
+                    sectionOverview
+                    sideDivider
+                    sectionTrend
+                    sideDivider
+                    sectionMomentum
+                    sideDivider
+                    sectionVolatility
+                }
+                .padding(.horizontal, 16)
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var sideDivider: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.07))
+            .frame(height: 1)
+            .padding(.vertical, 12)
+    }
+
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold, design: .default))
+            .tracking(1.6)
+            .foregroundStyle(.white.opacity(0.42))
+            .padding(.bottom, 10)
+    }
+
+    private func statRow(_ name: String, _ value: String, valueColor: Color) -> some View {
+        HStack {
+            Text(name)
+                .font(.system(size: 14, weight: .regular, design: .default))
+                .foregroundStyle(.white.opacity(0.60))
+            Spacer()
+            Text(value)
+                .font(.system(size: 14, weight: .medium, design: .default))
+                .foregroundStyle(valueColor.opacity(0.92))
+        }
+        .padding(.bottom, 8)
+    }
+
+    private var sectionAISignal: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionTitle("AI SIGNAL")
+            statRow("Signal", isUptrend ? "UP" : "DOWN", valueColor: isUptrend ? .mint : .red)
+            statRow("Confidence", "\(Int(confidence))%", valueColor: .white.opacity(0.88))
+            statRow("Stress", "\(Int(100 - confidence))", valueColor: .orange.opacity(0.9))
+        }
+    }
+
+    private var sectionOverview: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionTitle("OVERVIEW")
+            statRow("24h Change", "\(percentChange.formatted(.number.precision(.fractionLength(2))))%", valueColor: isUptrend ? .mint : .red)
+            statRow("24h High", "$\(Int(high))", valueColor: .mint.opacity(0.9))
+            statRow("24h Low", "$\(Int(low))", valueColor: .red.opacity(0.85))
+            statRow("24h Volume", volume.formatted(.number.notation(.compactName)), valueColor: .white.opacity(0.9))
+        }
+    }
+
+    private var sectionTrend: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionTitle("TREND")
+            statRow("EMA 9", "$\(Int(lastValue - 14))", valueColor: Color(red: 0.56, green: 0.74, blue: 0.96))
+            statRow("EMA 21", "$\(Int(lastValue - 36))", valueColor: Color(red: 0.65, green: 0.56, blue: 0.94))
+            statRow("Cross", isUptrend ? "Golden ↑" : "Death ↓", valueColor: isUptrend ? .mint : .red)
+        }
+    }
+
+    private var sectionMomentum: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionTitle("MOMENTUM")
+            statRow("RSI (14)", "\(52 + Int(absoluteChange * 1.9))", valueColor: .white.opacity(0.9))
+            statRow("MACD", absoluteChange.formatted(.number.precision(.fractionLength(2))), valueColor: isUptrend ? .mint : .red)
+            statRow("Signal", (absoluteChange * 0.8).formatted(.number.precision(.fractionLength(2))), valueColor: .white.opacity(0.7))
+        }
+    }
+
+    private var sectionVolatility: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionTitle("VOLATILITY")
+            statRow(
+                "Band Width",
+                "\(((high - low) / max(1, lastValue) * 100).formatted(.number.precision(.fractionLength(2))))%",
+                valueColor: .blue.opacity(0.9)
+            )
+            statRow("Data Points", "\(pointsCount)", valueColor: .white.opacity(0.82))
         }
     }
 }

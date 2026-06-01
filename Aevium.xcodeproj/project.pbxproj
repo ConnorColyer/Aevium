@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 46;
+	objectVersion = 71;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -19,7 +19,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		1D1B11BA18FB7C2B5505A0E1 /* SampleMarketData.csv */ = {isa = PBXFileReference; includeInIndex = 1; name = SampleMarketData.csv; path = Aevium/Resources/SampleMarketData.csv; sourceTree = "<group>"; };
+		1D1B11BA18FB7C2B5505A0E1 /* SampleMarketData.csv */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; name = SampleMarketData.csv; path = Aevium/Resources/SampleMarketData.csv; sourceTree = "<group>"; };
 		32470E089B0AC9C1FE4B4BF8 /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ContentView.swift; path = Aevium/UI/ContentView.swift; sourceTree = "<group>"; };
 		6EB207270E62873BB41A009A /* MarketDataModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MarketDataModels.swift; path = Aevium/Data/MarketDataModels.swift; sourceTree = "<group>"; };
 		7A83E6459C851B98714D0D6D /* SQLiteMarketDataStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SQLiteMarketDataStore.swift; path = Aevium/Data/SQLiteMarketDataStore.swift; sourceTree = "<group>"; };
@@ -129,8 +129,6 @@
 				Base,
 			);
 			mainGroup = C09E00A94BFDBDADB012E399;
-			minimizedProjectReferenceProxies = 0;
-			preferredProjectObjectVersion = 77;
 			productRefGroup = DB11C4D1F6163E01C06F3AD3 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -240,8 +238,12 @@
 				CODE_SIGNING_REQUIRED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.0.10;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aevium.desktop;
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -258,8 +260,12 @@
 				CODE_SIGNING_REQUIRED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.0.10;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aevium.desktop;
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
