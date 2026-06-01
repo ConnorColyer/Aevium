@@ -167,15 +167,6 @@ struct ContentView: View {
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
 
-                    VStack {
-                        HStack {
-                            Spacer()
-                            InfoDrawerTab(isOpen: $isInfoOpen)
-                                .padding(.top, 16)
-                                .padding(.trailing, 18)
-                        }
-                        Spacer()
-                    }
                 }
                 .ignoresSafeArea()
                 .background(WindowChromeConfigurator())
