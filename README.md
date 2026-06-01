@@ -41,3 +41,11 @@ Accepted date formats:
 - UI layer: `Aevium/UI/*`
 - View model: `Aevium/ViewModels/DashboardViewModel.swift`
 - Optional project regeneration script: `generate_project.rb`
+
+## Versioning
+
+Use Git tags for versions instead of separate folders/branches:
+
+1. Commit your changes to `main`.
+2. Run `./scripts/release.sh 0.1.0`.
+3. The script pushes `main`, creates tag `v0.1.0`, and pushes the tag.
