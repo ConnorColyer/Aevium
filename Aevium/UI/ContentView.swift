@@ -3,9 +3,9 @@ import AppKit
 import Charts
 
 struct ContentView: View {
-    @State private var points = Self.makeSeries()
     @State private var selectedRange: ChartRange = .week
-    @State private var isInfoOpen = true
+
+    private let points = Self.makeSeries()
 
     private var visiblePoints: [GraphPoint] {
         selectedRange.slice(from: points)
@@ -18,274 +18,523 @@ struct ContentView: View {
         guard firstValue != 0 else { return 0 }
         return (absoluteChange / firstValue) * 100
     }
-    private var isUptrend: Bool { absoluteChange >= 0 }
-    private var dayHigh: Double { visiblePoints.map(\.value).max() ?? 0 }
-    private var dayLow: Double { visiblePoints.map(\.value).min() ?? 0 }
+    private var highValue: Double { visiblePoints.map(\.value).max() ?? 0 }
+    private var lowValue: Double { visiblePoints.map(\.value).min() ?? 0 }
 
     var body: some View {
-        TimelineView(.animation) { context in
-            GeometryReader { proxy in
-                let size = proxy.size
-                let t = context.date.timeIntervalSinceReferenceDate
-                let baseStart = UnitPoint(
-                    x: 0.12 + 0.03 * sin(t * 0.045),
-                    y: 0.10 + 0.025 * cos(t * 0.040)
+        GeometryReader { proxy in
+            ZStack {
+                AmbientBackground(size: proxy.size)
+                GrainOverlay()
+
+                AeviumWorkspace(
+                    points: visiblePoints,
+                    selectedRange: $selectedRange,
+                    lastValue: lastValue,
+                    highValue: highValue,
+                    lowValue: lowValue,
+                    percentChange: percentChange,
+                    pointCount: visiblePoints.count
                 )
-                let baseEnd = UnitPoint(
-                    x: 0.88 + 0.03 * cos(t * 0.038),
-                    y: 0.90 + 0.025 * sin(t * 0.042)
-                )
-
-                ZStack {
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.17, green: 0.18, blue: 0.20),
-                            Color(red: 0.13, green: 0.14, blue: 0.155),
-                            Color(red: 0.095, green: 0.102, blue: 0.116)
-                        ],
-                        startPoint: baseStart,
-                        endPoint: baseEnd
-                    )
-
-                    RadialGradient(
-                        colors: [
-                            Color(red: 0.24, green: 0.36, blue: 0.51).opacity(0.22),
-                            .clear
-                        ],
-                        center: UnitPoint(
-                            x: 0.35 + 0.08 * sin(t * 0.11),
-                            y: 0.30 + 0.07 * cos(t * 0.09)
-                        ),
-                        startRadius: 20,
-                        endRadius: min(size.width, size.height) * 0.75
-                    )
-
-                    RadialGradient(
-                        colors: [
-                            Color(red: 0.19, green: 0.35, blue: 0.31).opacity(0.21),
-                            .clear
-                        ],
-                        center: UnitPoint(
-                            x: 0.70 + 0.07 * cos(t * 0.10),
-                            y: 0.65 + 0.08 * sin(t * 0.12)
-                        ),
-                        startRadius: 20,
-                        endRadius: min(size.width, size.height) * 0.80
-                    )
-
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.14, green: 0.13, blue: 0.12).opacity(0.16),
-                            Color.clear,
-                            Color.black.opacity(0.20)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-
-                    Rectangle()
-                        .fill(
-                            AngularGradient(
-                                colors: [
-                                    .clear,
-                                    Color(red: 0.21, green: 0.31, blue: 0.46).opacity(0.10),
-                                    .clear,
-                                    Color(red: 0.18, green: 0.32, blue: 0.28).opacity(0.08),
-                                    .clear
-                                ],
-                                center: .center
-                            )
-                        )
-                        .rotationEffect(.degrees((t * 1.5).truncatingRemainder(dividingBy: 360)))
-                        .blur(radius: 110)
-                        .blendMode(.softLight)
-                        .opacity(0.13 + 0.02 * sin(t * 0.06))
-                        .allowsHitTesting(false)
-
-                    GrainOverlay()
-
-                    let drawerWidth = min(320, max(278, size.width * 0.19))
-
-                    FocusedPriceGraph(
-                        points: visiblePoints,
-                        time: t,
-                        isUptrend: isUptrend
-                    )
-                    .padding(.leading, 14)
-                    .padding(.top, 50)
-                    .padding(.bottom, 14)
-                    .padding(.trailing, isInfoOpen ? drawerWidth + 26 : 20)
-                    .animation(.spring(response: 0.34, dampingFraction: 0.86), value: isInfoOpen)
-
-                    HStack(spacing: 0) {
-                        Spacer()
-
-                        if isInfoOpen {
-                            SideInfoPanel(
-                                lastValue: lastValue,
-                                percentChange: percentChange,
-                                high: dayHigh,
-                                low: dayLow,
-                                volume: Double(visiblePoints.count) * 97.3,
-                                absoluteChange: absoluteChange,
-                                pointsCount: visiblePoints.count
-                            )
-                            .frame(width: drawerWidth)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(.ultraThinMaterial.opacity(0.32))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                                    )
-                            )
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .shadow(color: Color.black.opacity(0.24), radius: 18, x: -2, y: 10)
-                            .padding(.trailing, 12)
-                            .padding(.vertical, 16)
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
-                        }
-                    }
-                    .animation(.spring(response: 0.34, dampingFraction: 0.86), value: isInfoOpen)
-
-                    if !isInfoOpen {
-                        VStack {
-                            HStack {
-                                Spacer()
-                                FloatingPriceTicker(
-                                    isOpen: $isInfoOpen,
-                                    symbol: "BTC / USDT",
-                                    lastValue: lastValue,
-                                    percentChange: percentChange,
-                                    isUptrend: isUptrend
-                                )
-                                .padding(.trailing, 24)
-                                .padding(.top, 68)
-                            }
-                            Spacer()
-                        }
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                    }
-
-                }
-                .ignoresSafeArea()
-                .background(WindowChromeConfigurator())
             }
+            .ignoresSafeArea()
+            .background(WindowChromeConfigurator())
         }
     }
 
     private static func makeSeries(count: Int = 320) -> [GraphPoint] {
         let start = Date().addingTimeInterval(Double(-count * 3600))
-        var value: Double = 138.0
-        var output: [GraphPoint] = []
-        output.reserveCapacity(count)
 
-        for i in 0..<count {
-            let swing = sin(Double(i) * 0.055) * 1.35
-            let drift = cos(Double(i) * 0.017) * 0.34
-            let micro = sin(Double(i) * 0.42) * 0.16
-            value += swing * 0.12 + drift * 0.08 + micro
+        return (0..<count).map { i in
+            let p = Double(i) / Double(max(count - 1, 1))
+            let trend = 1.8 * sin(p * .pi * 2.4)
+            let cycle = 2.9 * cos(p * .pi * 4.8)
+            let local = 0.55 * sin(Double(i) * 0.33)
+            let lateRecovery = 2.2 * exp(-pow((p - 0.78) / 0.18, 2))
 
-            output.append(
-                GraphPoint(
-                    index: i,
-                    date: start.addingTimeInterval(Double(i) * 3600),
-                    value: value
-                )
+            return GraphPoint(
+                index: i,
+                date: start.addingTimeInterval(Double(i) * 900),
+                value: 141.4 + trend + cycle + local + lateRecovery - p * 1.1
             )
         }
-
-        return output
     }
 }
 
-private struct InfoDrawerTab: View {
-    @Binding var isOpen: Bool
+private struct AeviumWorkspace: View {
+    @State private var isInspectorOpen = true
+
+    let points: [GraphPoint]
+    @Binding var selectedRange: ChartRange
+    let lastValue: Double
+    let highValue: Double
+    let lowValue: Double
+    let percentChange: Double
+    let pointCount: Int
+
+    private var isUp: Bool { percentChange >= 0 }
 
     var body: some View {
-        Button {
-            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
-                isOpen.toggle()
-            }
-        } label: {
-            HStack(spacing: 7) {
-                Image(systemName: "sidebar.right")
-                    .font(.system(size: 11, weight: .semibold))
-                Text(isOpen ? "Hide Info" : "Show Info")
-                    .font(.system(size: 12, weight: .semibold, design: .default))
-                Image(systemName: isOpen ? "chevron.right" : "chevron.left")
-                    .font(.system(size: 10, weight: .bold))
-            }
-            .foregroundStyle(.white.opacity(0.76))
-            .padding(.horizontal, 11)
-            .padding(.vertical, 8)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(.ultraThinMaterial.opacity(0.52))
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .stroke(Color.white.opacity(0.14), lineWidth: 1)
+        HStack(spacing: 0) {
+            AeviumRail()
+
+            VStack(spacing: 0) {
+                WorkspaceTopBar()
+
+                Rectangle()
+                    .fill(Color.white.opacity(0.065))
+                    .frame(height: 1)
+
+                HStack(spacing: 0) {
+                    ChartStage(
+                        points: points,
+                        selectedRange: $selectedRange,
+                        isUp: isUp
                     )
-            )
+
+                    Rectangle()
+                        .fill(Color.white.opacity(0.065))
+                        .frame(width: 1)
+
+                    if isInspectorOpen {
+                        MarketInspector(
+                            isOpen: $isInspectorOpen,
+                            lastValue: lastValue,
+                            highValue: highValue,
+                            lowValue: lowValue,
+                            percentChange: percentChange,
+                            pointCount: pointCount,
+                            isUp: isUp
+                        )
+                        .frame(width: 286)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                    } else {
+                        CollapsedInspectorRail(isOpen: $isInspectorOpen)
+                            .frame(width: 46)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.spring(response: 0.28, dampingFraction: 0.88), value: isInspectorOpen)
+            }
+        }
+        .background(
+            Color(red: 0.105, green: 0.117, blue: 0.130).opacity(0.64)
+        )
+    }
+}
+
+private struct AeviumRail: View {
+    var body: some View {
+        VStack(spacing: 22) {
+            Spacer().frame(height: 78)
+
+            railButton("chart.xyaxis.line", active: true)
+            railButton("tray.full", active: false)
+            railButton("waveform.path.ecg", active: false)
+
+            Spacer()
+
+            railButton("slider.horizontal.3", active: false)
+        }
+        .frame(width: 70)
+        .background(Color.black.opacity(0.12))
+    }
+
+    private func railButton(_ icon: String, active: Bool) -> some View {
+        Button {} label: {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(active ? Color(red: 0.72, green: 0.88, blue: 0.82) : .white.opacity(0.34))
+                .frame(width: 38, height: 38)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(active ? Color.white.opacity(0.075) : Color.clear)
+                )
+                .help(icon)
         }
         .buttonStyle(.plain)
     }
 }
 
-private struct FloatingPriceTicker: View {
-    @Binding var isOpen: Bool
-    let symbol: String
-    let lastValue: Double
-    let percentChange: Double
-    let isUptrend: Bool
+private struct WorkspaceTopBar: View {
+    var body: some View {
+        HStack {
+            Text("AEVIUM")
+                .font(.system(size: 13, weight: .semibold, design: .default))
+                .tracking(3.0)
+                .foregroundStyle(.white.opacity(0.52))
+            Spacer()
+        }
+        .padding(.leading, 24)
+        .padding(.trailing, 22)
+        .frame(height: 44)
+    }
+}
+
+private struct ChartStage: View {
+    let points: [GraphPoint]
+    @Binding var selectedRange: ChartRange
+    let isUp: Bool
+    
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_GB_POSIX")
+        formatter.dateFormat = "d MMM"
+        return formatter
+    }()
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_GB_POSIX")
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    private var yDomain: ClosedRange<Double> {
+        let minValue = points.map(\.value).min() ?? 0
+        let maxValue = points.map(\.value).max() ?? 1
+        let span = max(maxValue - minValue, 1)
+        return (minValue - span * 0.10)...(maxValue + span * 0.12)
+    }
 
     var body: some View {
-        Button {
-            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
-                isOpen = true
-            }
-        } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(symbol)
-                        .font(.system(size: 11, weight: .medium, design: .default))
-                        .foregroundStyle(.white.opacity(0.52))
-                    Text(lastValue, format: .number.precision(.fractionLength(2)))
-                        .font(.system(size: 19, weight: .semibold, design: .default))
-                        .foregroundStyle(.white.opacity(0.96))
-                }
+        ZStack(alignment: .topTrailing) {
+            Chart(points) { point in
+                AreaMark(
+                    x: .value("Time", point.date),
+                    yStart: .value("Base", yDomain.lowerBound),
+                    yEnd: .value("Price", point.value)
+                )
+                .interpolationMethod(.catmullRom)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.50, green: 0.72, blue: 0.70).opacity(0.20),
+                            Color(red: 0.25, green: 0.33, blue: 0.36).opacity(0.06)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
 
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text("LIVE")
-                        .font(.system(size: 10, weight: .semibold, design: .default))
-                        .foregroundStyle(.white.opacity(0.42))
-                    Text("\(percentChange >= 0 ? "+" : "")\(percentChange, format: .number.precision(.fractionLength(2)))%")
-                        .font(.system(size: 13, weight: .semibold, design: .default))
-                        .foregroundStyle(
-                            isUptrend
-                                ? Color(red: 0.72, green: 0.86, blue: 0.83)
-                                : Color(red: 0.90, green: 0.69, blue: 0.72)
+                LineMark(
+                    x: .value("Time", point.date),
+                    y: .value("Price", point.value)
+                )
+                .interpolationMethod(.catmullRom)
+                .lineStyle(.init(lineWidth: 2.0, lineCap: .round, lineJoin: .round))
+                .foregroundStyle(
+                    isUp
+                        ? Color(red: 0.60, green: 0.86, blue: 0.75)
+                        : Color(red: 0.86, green: 0.68, blue: 0.68)
+                )
+
+                if let last = points.last {
+                    RuleMark(y: .value("Last", last.value))
+                        .foregroundStyle(.white.opacity(0.09))
+                        .lineStyle(.init(lineWidth: 0.8, dash: [3, 7]))
+
+                    PointMark(
+                        x: .value("Time", last.date),
+                        y: .value("Price", last.value)
+                    )
+                    .symbolSize(42)
+                    .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+            .chartLegend(.hidden)
+            .chartYScale(domain: yDomain)
+            .chartYAxis {
+                AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { _ in
+                    AxisGridLine(stroke: .init(lineWidth: 0.45, dash: [2, 7]))
+                        .foregroundStyle(.white.opacity(0.09))
+                    AxisValueLabel()
+                        .foregroundStyle(.white.opacity(0.30))
+                        .font(.system(size: 10, weight: .regular, design: .monospaced))
+                }
+            }
+            .chartXAxis {
+                AxisMarks(values: .automatic(desiredCount: 6)) { value in
+                    AxisGridLine(stroke: .init(lineWidth: 0.4))
+                        .foregroundStyle(.white.opacity(0.04))
+                    AxisValueLabel {
+                        if let date = value.as(Date.self) {
+                            Text(xAxisLabel(for: date))
+                        }
+                    }
+                    .foregroundStyle(.white.opacity(0.30))
+                    .font(.system(size: 9, weight: .regular, design: .monospaced))
+                }
+            }
+            .padding(.top, 44)
+            .padding(.leading, 22)
+            .padding(.trailing, 18)
+            .padding(.bottom, 16)
+
+            AeviumRangeSelector(selectedRange: $selectedRange)
+                .padding(.trailing, 24)
+                .padding(.top, 14)
+        }
+        .background(
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.025),
+                    Color(red: 0.08, green: 0.12, blue: 0.13).opacity(0.16)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+    }
+
+    private func xAxisLabel(for date: Date) -> String {
+        let hour = Calendar.current.component(.hour, from: date)
+        if hour == 0 {
+            return Self.dayFormatter.string(from: date)
+        }
+        return Self.timeFormatter.string(from: date)
+    }
+}
+
+private struct AeviumRangeSelector: View {
+    @Binding var selectedRange: ChartRange
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(ChartRange.allCases) { range in
+                Button {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+                        selectedRange = range
+                    }
+                } label: {
+                    Text(range.rawValue)
+                        .font(.system(size: 11, weight: .semibold, design: .default))
+                        .monospacedDigit()
+                        .foregroundStyle(selectedRange == range ? .white.opacity(0.9) : .white.opacity(0.34))
+                        .frame(width: 38, height: 28)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(selectedRange == range ? Color.white.opacity(0.105) : Color.clear)
                         )
                 }
-
-                Image(systemName: "sidebar.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.62))
-                    .padding(.leading, 2)
+                .buttonStyle(.plain)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(.ultraThinMaterial.opacity(0.50))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(Color.white.opacity(0.14), lineWidth: 1)
-                    )
-            )
-            .shadow(color: Color.black.opacity(0.20), radius: 10, x: 0, y: 6)
         }
-        .buttonStyle(.plain)
+        .padding(4)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.black.opacity(0.18))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.white.opacity(0.09), lineWidth: 1)
+                )
+        )
+    }
+}
+
+private struct MarketInspector: View {
+    @Binding var isOpen: Bool
+
+    let lastValue: Double
+    let highValue: Double
+    let lowValue: Double
+    let percentChange: Double
+    let pointCount: Int
+    let isUp: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text("BTC / USDT")
+                            .font(.system(size: 16, weight: .semibold, design: .default))
+                            .foregroundStyle(.white.opacity(0.86))
+
+                        HStack(spacing: 5) {
+                            Circle()
+                                .fill(Color(red: 0.48, green: 0.85, blue: 0.69))
+                                .frame(width: 6, height: 6)
+                            Text("Live")
+                                .font(.system(size: 11, weight: .medium, design: .default))
+                                .foregroundStyle(.white.opacity(0.50))
+                        }
+                    }
+
+                    Text(lastValue, format: .number.precision(.fractionLength(2)))
+                        .font(.system(size: 34, weight: .semibold, design: .default))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.94))
+
+                    Text("\(percentChange >= 0 ? "+" : "")\(percentChange, format: .number.precision(.fractionLength(2)))%")
+                        .font(.system(size: 14, weight: .medium, design: .default))
+                        .monospacedDigit()
+                        .foregroundStyle(isUp ? Color(red: 0.62, green: 0.82, blue: 0.72) : Color(red: 0.86, green: 0.58, blue: 0.58))
+                }
+
+                Spacer()
+
+                Button {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                        isOpen = false
+                    }
+                } label: {
+                    Image(systemName: "sidebar.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.50))
+                        .frame(width: 30, height: 30)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(Color.white.opacity(0.045))
+                        )
+                        .help("Hide inspector")
+                }
+                .buttonStyle(.plain)
+            }
+
+            Rectangle()
+                .fill(Color.white.opacity(0.07))
+                .frame(height: 1)
+
+            inspectorRows
+
+            Rectangle()
+                .fill(Color.white.opacity(0.07))
+                .frame(height: 1)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("MODEL SIGNALS")
+                    .font(.system(size: 10, weight: .semibold, design: .default))
+                    .tracking(1.8)
+                    .foregroundStyle(.white.opacity(0.34))
+
+                signalBar("Flow", value: 0.62, color: Color(red: 0.54, green: 0.78, blue: 0.68))
+                signalBar("Stress", value: isUp ? 0.28 : 0.58, color: Color(red: 0.78, green: 0.60, blue: 0.48))
+                signalBar("Noise", value: 0.36, color: Color(red: 0.56, green: 0.66, blue: 0.78))
+            }
+
+            Spacer()
+        }
+        .padding(.top, 28)
+        .padding(.horizontal, 22)
+        .padding(.bottom, 22)
+        .background(Color.black.opacity(0.10))
+    }
+
+    private var inspectorRows: some View {
+        VStack(spacing: 10) {
+            metric("Last", lastValue.formatted(.number.precision(.fractionLength(2))))
+            metric("Change", "\(percentChange >= 0 ? "+" : "")\(percentChange.formatted(.number.precision(.fractionLength(2))))%")
+            metric("High", highValue.formatted(.number.precision(.fractionLength(2))))
+            metric("Low", lowValue.formatted(.number.precision(.fractionLength(2))))
+            metric("Samples", "\(pointCount)")
+        }
+    }
+
+    private func metric(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 13, weight: .regular, design: .default))
+                .foregroundStyle(.white.opacity(0.50))
+            Spacer()
+            Text(value)
+                .font(.system(size: 13, weight: .medium, design: .default))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.82))
+        }
+    }
+
+    private func signalBar(_ label: String, value: Double, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(label)
+                    .font(.system(size: 12, weight: .medium, design: .default))
+                    .foregroundStyle(.white.opacity(0.54))
+                Spacer()
+                Text("\(Int(value * 100))")
+                    .font(.system(size: 12, weight: .medium, design: .default))
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.48))
+            }
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.08))
+                    Capsule()
+                        .fill(color.opacity(0.76))
+                        .frame(width: proxy.size.width * value)
+                }
+            }
+            .frame(height: 4)
+        }
+    }
+}
+
+private struct CollapsedInspectorRail: View {
+    @Binding var isOpen: Bool
+
+    var body: some View {
+        VStack {
+            Button {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                    isOpen = true
+                }
+            } label: {
+                Image(systemName: "sidebar.left")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.56))
+                    .frame(width: 30, height: 30)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(Color.white.opacity(0.045))
+                    )
+                    .help("Show inspector")
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 22)
+
+            Spacer()
+        }
+        .background(Color.black.opacity(0.08))
+    }
+}
+
+private struct AmbientBackground: View {
+    let size: CGSize
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.085, green: 0.095, blue: 0.115),
+                    Color(red: 0.12, green: 0.135, blue: 0.155),
+                    Color(red: 0.075, green: 0.083, blue: 0.093)
+                ],
+                startPoint: UnitPoint(x: 0.10, y: 0.05),
+                endPoint: UnitPoint(x: 0.92, y: 0.95)
+            )
+
+            LinearGradient(
+                colors: [
+                    Color(red: 0.09, green: 0.16, blue: 0.22).opacity(0.44),
+                    Color.clear,
+                    Color(red: 0.20, green: 0.13, blue: 0.24).opacity(0.30)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+
+            RadialGradient(
+                colors: [
+                    Color(red: 0.24, green: 0.42, blue: 0.38).opacity(0.14),
+                    .clear
+                ],
+                center: UnitPoint(x: 0.30, y: 0.72),
+                startRadius: 40,
+                endRadius: max(size.width, size.height) * 0.78
+            )
+        }
     }
 }
 
@@ -300,17 +549,16 @@ private enum ChartRange: String, CaseIterable, Identifiable {
 
     var points: Int {
         switch self {
-        case .day: return 24
-        case .week: return 24 * 7
-        case .month: return 24 * 30
-        case .quarter: return 24 * 90
-        case .year: return 24 * 300
+        case .day: return 64
+        case .week: return 180
+        case .month: return 240
+        case .quarter: return 290
+        case .year: return 320
         }
     }
 
     func slice(from data: [GraphPoint]) -> [GraphPoint] {
-        let count = min(points, data.count)
-        return Array(data.suffix(count))
+        Array(data.suffix(min(points, data.count)))
     }
 }
 
@@ -320,196 +568,6 @@ private struct GraphPoint: Identifiable {
     let value: Double
 
     var id: Int { index }
-}
-
-private struct FocusedPriceGraph: View {
-    let points: [GraphPoint]
-    let time: TimeInterval
-    let isUptrend: Bool
-
-    var body: some View {
-        Chart(points) { point in
-            AreaMark(
-                x: .value("Time", point.date),
-                y: .value("Price", point.value)
-            )
-            .interpolationMethod(.catmullRom)
-            .foregroundStyle(
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.50, green: 0.64, blue: 0.82).opacity(0.15),
-                        Color(red: 0.38, green: 0.54, blue: 0.70).opacity(0.08),
-                        Color.clear
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-
-            LineMark(
-                x: .value("Time", point.date),
-                y: .value("Price", point.value)
-            )
-            .interpolationMethod(.catmullRom)
-            .lineStyle(.init(lineWidth: 2.1, lineCap: .round, lineJoin: .round))
-            .foregroundStyle(
-                LinearGradient(
-                    colors: [
-                        isUptrend
-                            ? Color(red: 0.76, green: 0.84, blue: 0.94)
-                            : Color(red: 0.91, green: 0.71, blue: 0.73),
-                        isUptrend
-                            ? Color(red: 0.64, green: 0.77, blue: 0.89)
-                            : Color(red: 0.86, green: 0.63, blue: 0.66)
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
-
-            if let last = points.last {
-                PointMark(
-                    x: .value("Time", last.date),
-                    y: .value("Price", last.value)
-                )
-                .symbolSize(52)
-                .foregroundStyle(.white.opacity(0.92))
-            }
-        }
-        .chartLegend(.hidden)
-        .chartYAxis {
-            AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { _ in
-                AxisGridLine(stroke: .init(lineWidth: 0.45, dash: [2.5, 4]))
-                    .foregroundStyle(.white.opacity(0.12))
-                AxisValueLabel()
-                    .foregroundStyle(.white.opacity(0.34))
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-            }
-        }
-        .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 5)) { _ in
-                AxisGridLine(stroke: .init(lineWidth: 0.4))
-                    .foregroundStyle(.white.opacity(0.04))
-                AxisTick(stroke: .init(lineWidth: 0.5))
-                    .foregroundStyle(.white.opacity(0.20))
-                AxisValueLabel()
-                    .foregroundStyle(.white.opacity(0.34))
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-            }
-        }
-        .chartPlotStyle { plot in
-            plot
-                .background(Color.clear)
-        }
-        .overlay(alignment: .topTrailing) {
-            if let last = points.last {
-                Text(last.value, format: .number.precision(.fractionLength(2)))
-                    .font(.system(size: 13, weight: .semibold, design: .default))
-                    .foregroundStyle(.white.opacity(0.56))
-                    .padding(.top, 2)
-                    .padding(.trailing, 6)
-            }
-        }
-    }
-}
-
-private struct SideInfoPanel: View {
-    let lastValue: Double
-    let percentChange: Double
-    let high: Double
-    let low: Double
-    let volume: Double
-    let absoluteChange: Double
-    let pointsCount: Int
-
-    private var isUptrend: Bool { absoluteChange >= 0 }
-    private var confidence: Double { min(97, max(3, 50 + absoluteChange * 1.8)) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 7) {
-                Text("Market Snapshot")
-                    .font(.system(size: 12, weight: .medium, design: .default))
-                    .foregroundStyle(.white.opacity(0.46))
-
-                Text(lastValue, format: .currency(code: "USD").precision(.fractionLength(0)))
-                    .font(.system(size: 40, weight: .semibold, design: .default))
-                    .foregroundStyle(.white.opacity(0.95))
-
-                Text("\(absoluteChange >= 0 ? "+" : "")\(percentChange, format: .number.precision(.fractionLength(2)))%")
-                    .font(.system(size: 16, weight: .semibold, design: .default))
-                    .foregroundStyle(
-                        isUptrend
-                            ? Color(red: 0.72, green: 0.86, blue: 0.83)
-                            : Color(red: 0.90, green: 0.69, blue: 0.72)
-                    )
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 12)
-
-            sideDivider
-
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    sectionOverview
-                    sideDivider
-                    sectionSignal
-                }
-                .padding(.horizontal, 16)
-            }
-
-            Spacer(minLength: 0)
-        }
-    }
-
-    private var sideDivider: some View {
-        Rectangle()
-            .fill(Color.white.opacity(0.07))
-            .frame(height: 1)
-            .padding(.vertical, 10)
-    }
-
-    private func sectionTitle(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 11, weight: .medium, design: .default))
-            .tracking(1.1)
-            .foregroundStyle(.white.opacity(0.42))
-            .padding(.bottom, 8)
-    }
-
-    private func statRow(_ name: String, _ value: String, valueColor: Color) -> some View {
-        HStack {
-            Text(name)
-                .font(.system(size: 14, weight: .regular, design: .default))
-                .foregroundStyle(.white.opacity(0.60))
-            Spacer()
-            Text(value)
-                .font(.system(size: 14, weight: .medium, design: .default))
-                .foregroundStyle(valueColor.opacity(0.92))
-        }
-        .padding(.bottom, 9)
-    }
-
-    private var sectionOverview: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionTitle("OVERVIEW")
-            statRow("Last", lastValue.formatted(.currency(code: "USD").precision(.fractionLength(0))), valueColor: .white)
-            statRow("24h High", high.formatted(.currency(code: "USD").precision(.fractionLength(0))), valueColor: .white.opacity(0.86))
-            statRow("24h Low", low.formatted(.currency(code: "USD").precision(.fractionLength(0))), valueColor: .white.opacity(0.86))
-            statRow("Volume", volume.formatted(.number.notation(.compactName)), valueColor: .white.opacity(0.86))
-        }
-    }
-
-    private var sectionSignal: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionTitle("SIGNAL")
-            statRow("Direction", isUptrend ? "Uptrend" : "Downtrend", valueColor: isUptrend ? .mint : .red)
-            statRow("Confidence", "\(Int(confidence))%", valueColor: .white)
-            statRow("Stress", "\(Int(100 - confidence))", valueColor: .white.opacity(0.86))
-            statRow("Points", "\(pointsCount)", valueColor: .white.opacity(0.86))
-        }
-    }
 }
 
 private struct GrainOverlay: View {
@@ -646,7 +704,7 @@ private struct WindowChromeConfigurator: NSViewRepresentable {
 
             let buttonSize = close.frame.size
             let topInset: CGFloat = 11
-            let leadingInset: CGFloat = 12
+            let leadingInset: CGFloat = 6
             let spacing: CGFloat = 8
             let y = container.bounds.height - topInset - buttonSize.height
 
