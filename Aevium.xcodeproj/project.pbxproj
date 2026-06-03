@@ -7,186 +7,192 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		07C3342D7A58040E02099AA9 /* AeviumAPIKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E632E61A6E376F73534648 /* AeviumAPIKeyStore.swift */; };
-		10B271BDFE045B4262540666 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 220C3F313EED5FDBD39B1968 /* Cocoa.framework */; };
-		1ACA96E08117972B4454444D /* BinanceProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7145EA65C11B872D03B9F943 /* BinanceProvider.swift */; };
-		1EBFC261A9CB0E0C2F615D47 /* OverviewWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E3FE2136A79EA8DC704571 /* OverviewWindow.swift */; };
-		30B57233E0364CE93FCCC113 /* klineStream.json in Resources */ = {isa = PBXBuildFile; fileRef = FFA81F11AB6DBDDCBF5CD4E2 /* klineStream.json */; };
-		3244E6FE4FF94F5ED6331077 /* exchangeInfo.json in Resources */ = {isa = PBXBuildFile; fileRef = 3A9B6D012319071AA9E88A52 /* exchangeInfo.json */; };
-		32745B0574DCD71B55DA1888 /* MarketDataProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07CC8ACB68E8F050FCAF7DD5 /* MarketDataProvider.swift */; };
-		3AB02E21EE7924B356DF7104 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5097CF3755983F80B39E65E5 /* AppEnvironment.swift */; };
-		4B64469CD66548C24D7101D3 /* MarketDataEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA2B95F3188B0DAA8E8F6567 /* MarketDataEngine.swift */; };
-		4E8BF2D06CC9C1F50DD72AE9 /* AeviumMetalSeriesProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71339AE2594DED3FEE0F04EA /* AeviumMetalSeriesProcessor.swift */; };
-		5C98D3428339E9F3752DBE01 /* FinnhubStockProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7AC6057374055F3CBAE64A6 /* FinnhubStockProvider.swift */; };
-		5E5F90B82A1BEAC729B2278D /* MarketDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2284B989B20FC059C9804B8E /* MarketDataModels.swift */; };
-		69A73ACFD5A57D54B1001ABC /* klines.json in Resources */ = {isa = PBXBuildFile; fileRef = BE012CFBC5E0CE6B6F5BBF82 /* klines.json */; };
-		6B00F61E6859204C44A350DA /* rateLimit.json in Resources */ = {isa = PBXBuildFile; fileRef = 13AA91E10F70C0DCBAA64242 /* rateLimit.json */; };
-		733AB0BC95E2E4B98E598F63 /* CryptoMarketDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352D03ED7784E579A2E3B1E7 /* CryptoMarketDataModels.swift */; };
-		A16CFCC593FCC2E3F5846F1E /* BackfillService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C86801D94828046AA987A5 /* BackfillService.swift */; };
-		AB18E49715021C157433376A /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 220C3F313EED5FDBD39B1968 /* Cocoa.framework */; };
-		B41DA442A16C7F3C6735C74F /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 932B6899F910073AEFDE96D6 /* ContentView.swift */; };
-		B994DFE7E07CA2FA8467A535 /* AeviumMarketViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37BC940A930325FE9E098D3B /* AeviumMarketViewModel.swift */; };
-		C41BC50C67535E75B6CEC5F2 /* invalidSymbol.json in Resources */ = {isa = PBXBuildFile; fileRef = CA7AFA35344651D53DBD6DC6 /* invalidSymbol.json */; };
-		DCB2E6A9D671F25593C5F34E /* MarketSeriesCPU.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF9ACC1A72731FC80BC37E8C /* MarketSeriesCPU.swift */; };
-		DE8657F933C8ED1E428524FD /* MarketDataRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE7D8FC835E37383B7844491 /* MarketDataRepository.swift */; };
-		E0E88D640F9050282A89CEA0 /* LiveIngestionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B94B89F430A76BADA92B98A /* LiveIngestionService.swift */; };
-		E0E921469BE44B6FF73CE4B7 /* BinanceMarketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74F44250559849902D4DA88D /* BinanceMarketClient.swift */; };
-		E7DACDB678D414F142EA13A9 /* CryptoBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A88677BD4C44C344F66FC0EF /* CryptoBackendTests.swift */; };
-		E960AC2F7066CB0AC0E17A71 /* ticker24hr.json in Resources */ = {isa = PBXBuildFile; fileRef = 4FBDCFA6C0DF169171093E42 /* ticker24hr.json */; };
-		F32E73FED156F66B2AC7C725 /* SQLiteMarketDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5152103D9BEDA19D88FFAD6 /* SQLiteMarketDataStore.swift */; };
-		F747F274ACEA557340C93752 /* CryptoMarketDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EF79C40CC556931C033850F /* CryptoMarketDataStore.swift */; };
-		FC360CD781765F43C692A3DA /* AeviumApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAC20540EC279B2AA6EBA270 /* AeviumApp.swift */; };
+		07DE063FADE1A0998177B576 /* AeviumMarketViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71F6B589B54F8E0CB955822A /* AeviumMarketViewModel.swift */; };
+		08C52464BF2CEE90A9096FF7 /* ticker24hr.json in Resources */ = {isa = PBXBuildFile; fileRef = 276F8B387AD52A771D5DB309 /* ticker24hr.json */; };
+		18C7CDF425BE13DF29066E4A /* CryptoBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C669E3880A431C0B6092F213 /* CryptoBackendTests.swift */; };
+		1B672793577E03C1668E5A68 /* klines.json in Resources */ = {isa = PBXBuildFile; fileRef = 59D71A0752B988FAC475C4F6 /* klines.json */; };
+		2E9757FC54C2ABF0523AC314 /* CryptoMarketDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2ADAB62EE0E9B33BB81557B /* CryptoMarketDataModels.swift */; };
+		369BCBDF98D59BA874DD8ECE /* exchangeInfo.json in Resources */ = {isa = PBXBuildFile; fileRef = 6A1FD4CF7CFE1F211DA601F6 /* exchangeInfo.json */; };
+		3AF073124F4E433D38AE16FE /* MarketSeriesCPU.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8288AFE177850C772AA232B7 /* MarketSeriesCPU.swift */; };
+		464C6208235EA6253D172042 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56579288D00231FD5FF72E1B /* ContentView.swift */; };
+		495298D7D12D2FC2F60A1564 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 775E59F608A687EA9746A7B2 /* AppEnvironment.swift */; };
+		5090B0A3CB61B8A54EDA2076 /* invalidSymbol.json in Resources */ = {isa = PBXBuildFile; fileRef = 84AF49A774EDEFD5DC5D2391 /* invalidSymbol.json */; };
+		529EF05E40157B382A64AC87 /* InstrumentWatchlistStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 563A3CF04DFC7AFC5C5D0C0F /* InstrumentWatchlistStore.swift */; };
+		56A7876AA72ED942F7991064 /* WatchlistStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BFBA519BC76083EE0E435AF /* WatchlistStoreTests.swift */; };
+		5D22C972BAA19DE354B501B9 /* AeviumMetalSeriesProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 755744A9DC5C0BC054521784 /* AeviumMetalSeriesProcessor.swift */; };
+		747D1E2818E8279D53F4F0A9 /* AeviumAPIKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A7B234747E0E7F120161C5E /* AeviumAPIKeyStore.swift */; };
+		76626D46C42D6E4AFBC9F598 /* SQLiteMarketDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7989F4260D7F1D7F974D70C3 /* SQLiteMarketDataStore.swift */; };
+		84576F5287E1F72CA7B72D97 /* OverviewWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1994F091EB5CAB2AAAA40D9F /* OverviewWindow.swift */; };
+		8B7F92E781E1EF8C0CFB025B /* BinanceProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54CE646B60AE8BA8C246681E /* BinanceProvider.swift */; };
+		8F03156170DBEC2C7FA183B5 /* BinanceMarketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3EA1BEBE25D0F1928D4C3D8 /* BinanceMarketClient.swift */; };
+		93B76A8CFB110CB4C3B36F96 /* FinnhubStockProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870A19F876F21F5204C848C2 /* FinnhubStockProvider.swift */; };
+		A6B80E1A2418D43A72C0A75F /* AeviumApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 390053607A7FAEC5EC43B0E8 /* AeviumApp.swift */; };
+		A7093F81EEE15229A78532C1 /* MarketDataEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9395CD855823C5C19B991A4D /* MarketDataEngine.swift */; };
+		B21B07FD097D2B0F49382510 /* rateLimit.json in Resources */ = {isa = PBXBuildFile; fileRef = 5ADC35B50FFEA2A5127E8DC5 /* rateLimit.json */; };
+		B7718F7A3A5A78DC055455D1 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E6FFE1E27996FD33336B1678 /* Cocoa.framework */; };
+		BE11025FA784CF7665763D2C /* MarketDataProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87EF04A6B0DA64FD41877D12 /* MarketDataProvider.swift */; };
+		D3D1554FA5ED302A49864061 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E6FFE1E27996FD33336B1678 /* Cocoa.framework */; };
+		DE44277ED621EF14B3064726 /* CryptoMarketDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 843D7780C3C77FB022EE96EC /* CryptoMarketDataStore.swift */; };
+		E7B8736B8F94CDF3BE2F9346 /* klineStream.json in Resources */ = {isa = PBXBuildFile; fileRef = 5ACBBB260A1A7372713A975F /* klineStream.json */; };
+		ECCDB92140516541DC38DDBB /* LiveIngestionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70D6B88B3190C09DA55A826 /* LiveIngestionService.swift */; };
+		EDC4E709E2A7A56D6FD59505 /* BackfillService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF129EF5E034274395530206 /* BackfillService.swift */; };
+		F7E1A11FACA9C4FE2BD259DE /* MarketDataRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5651D22EFD665D70237C8617 /* MarketDataRepository.swift */; };
+		FA1C26DB1051224E52D0166C /* MarketDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE2A27C98951117C69609AC3 /* MarketDataModels.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		075A778E0E67CB40B7AB732E /* PBXContainerItemProxy */ = {
+		05A9AA9CB7F1B72D24F22335 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = D6E8390836D0EB4D654B3212 /* Project object */;
+			containerPortal = 85813CDCF8E2F30027E0D5A2 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = 03D90A621C48A5646A20B857;
+			remoteGlobalIDString = 1C1A0110702100D2764A330F;
 			remoteInfo = Aevium;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		07CC8ACB68E8F050FCAF7DD5 /* MarketDataProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MarketDataProvider.swift; path = Aevium/Data/MarketDataProvider.swift; sourceTree = "<group>"; };
-		13AA91E10F70C0DCBAA64242 /* rateLimit.json */ = {isa = PBXFileReference; includeInIndex = 1; name = rateLimit.json; path = AeviumTests/Fixtures/rateLimit.json; sourceTree = "<group>"; };
-		220C3F313EED5FDBD39B1968 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
-		2284B989B20FC059C9804B8E /* MarketDataModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MarketDataModels.swift; path = Aevium/Data/MarketDataModels.swift; sourceTree = "<group>"; };
-		352D03ED7784E579A2E3B1E7 /* CryptoMarketDataModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CryptoMarketDataModels.swift; path = Aevium/Data/CryptoMarketDataModels.swift; sourceTree = "<group>"; };
-		37BC940A930325FE9E098D3B /* AeviumMarketViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AeviumMarketViewModel.swift; path = Aevium/ViewModels/AeviumMarketViewModel.swift; sourceTree = "<group>"; };
-		37C86801D94828046AA987A5 /* BackfillService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BackfillService.swift; path = Aevium/Data/BackfillService.swift; sourceTree = "<group>"; };
-		3A9B6D012319071AA9E88A52 /* exchangeInfo.json */ = {isa = PBXFileReference; includeInIndex = 1; name = exchangeInfo.json; path = AeviumTests/Fixtures/exchangeInfo.json; sourceTree = "<group>"; };
-		3EF79C40CC556931C033850F /* CryptoMarketDataStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CryptoMarketDataStore.swift; path = Aevium/Data/CryptoMarketDataStore.swift; sourceTree = "<group>"; };
-		4FBDCFA6C0DF169171093E42 /* ticker24hr.json */ = {isa = PBXFileReference; includeInIndex = 1; name = ticker24hr.json; path = AeviumTests/Fixtures/ticker24hr.json; sourceTree = "<group>"; };
-		5097CF3755983F80B39E65E5 /* AppEnvironment.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppEnvironment.swift; path = Aevium/App/AppEnvironment.swift; sourceTree = "<group>"; };
-		67E632E61A6E376F73534648 /* AeviumAPIKeyStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AeviumAPIKeyStore.swift; path = Aevium/App/AeviumAPIKeyStore.swift; sourceTree = "<group>"; };
-		71339AE2594DED3FEE0F04EA /* AeviumMetalSeriesProcessor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AeviumMetalSeriesProcessor.swift; path = Aevium/Compute/AeviumMetalSeriesProcessor.swift; sourceTree = "<group>"; };
-		7145EA65C11B872D03B9F943 /* BinanceProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BinanceProvider.swift; path = Aevium/Data/BinanceProvider.swift; sourceTree = "<group>"; };
-		74F44250559849902D4DA88D /* BinanceMarketClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BinanceMarketClient.swift; path = Aevium/Data/BinanceMarketClient.swift; sourceTree = "<group>"; };
-		7B94B89F430A76BADA92B98A /* LiveIngestionService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LiveIngestionService.swift; path = Aevium/Data/LiveIngestionService.swift; sourceTree = "<group>"; };
-		932B6899F910073AEFDE96D6 /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ContentView.swift; path = Aevium/UI/ContentView.swift; sourceTree = "<group>"; };
-		A5152103D9BEDA19D88FFAD6 /* SQLiteMarketDataStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SQLiteMarketDataStore.swift; path = Aevium/Data/SQLiteMarketDataStore.swift; sourceTree = "<group>"; };
-		A88677BD4C44C344F66FC0EF /* CryptoBackendTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CryptoBackendTests.swift; path = AeviumTests/CryptoBackendTests.swift; sourceTree = "<group>"; };
-		BE012CFBC5E0CE6B6F5BBF82 /* klines.json */ = {isa = PBXFileReference; includeInIndex = 1; name = klines.json; path = AeviumTests/Fixtures/klines.json; sourceTree = "<group>"; };
-		C7AC6057374055F3CBAE64A6 /* FinnhubStockProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FinnhubStockProvider.swift; path = Aevium/Data/FinnhubStockProvider.swift; sourceTree = "<group>"; };
-		CA2B95F3188B0DAA8E8F6567 /* MarketDataEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MarketDataEngine.swift; path = Aevium/Data/MarketDataEngine.swift; sourceTree = "<group>"; };
-		CA7AFA35344651D53DBD6DC6 /* invalidSymbol.json */ = {isa = PBXFileReference; includeInIndex = 1; name = invalidSymbol.json; path = AeviumTests/Fixtures/invalidSymbol.json; sourceTree = "<group>"; };
-		CE7D8FC835E37383B7844491 /* MarketDataRepository.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MarketDataRepository.swift; path = Aevium/Data/MarketDataRepository.swift; sourceTree = "<group>"; };
-		CEB95E2DB0DC8813091F16D3 /* Aevium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Aevium.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		D3E3FE2136A79EA8DC704571 /* OverviewWindow.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OverviewWindow.swift; path = Aevium/UI/OverviewWindow.swift; sourceTree = "<group>"; };
-		EAC20540EC279B2AA6EBA270 /* AeviumApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AeviumApp.swift; path = Aevium/App/AeviumApp.swift; sourceTree = "<group>"; };
-		EB1BEFCEA070027803CCBE5D /* AeviumTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AeviumTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		FF9ACC1A72731FC80BC37E8C /* MarketSeriesCPU.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MarketSeriesCPU.swift; path = Aevium/Compute/MarketSeriesCPU.swift; sourceTree = "<group>"; };
-		FFA81F11AB6DBDDCBF5CD4E2 /* klineStream.json */ = {isa = PBXFileReference; includeInIndex = 1; name = klineStream.json; path = AeviumTests/Fixtures/klineStream.json; sourceTree = "<group>"; };
+		0003E3DE66AB0011A1E941AC /* AeviumTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AeviumTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		1994F091EB5CAB2AAAA40D9F /* OverviewWindow.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OverviewWindow.swift; path = Aevium/UI/OverviewWindow.swift; sourceTree = "<group>"; };
+		1A7B234747E0E7F120161C5E /* AeviumAPIKeyStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AeviumAPIKeyStore.swift; path = Aevium/App/AeviumAPIKeyStore.swift; sourceTree = "<group>"; };
+		276F8B387AD52A771D5DB309 /* ticker24hr.json */ = {isa = PBXFileReference; includeInIndex = 1; name = ticker24hr.json; path = AeviumTests/Fixtures/ticker24hr.json; sourceTree = "<group>"; };
+		390053607A7FAEC5EC43B0E8 /* AeviumApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AeviumApp.swift; path = Aevium/App/AeviumApp.swift; sourceTree = "<group>"; };
+		54CE646B60AE8BA8C246681E /* BinanceProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BinanceProvider.swift; path = Aevium/Data/BinanceProvider.swift; sourceTree = "<group>"; };
+		563A3CF04DFC7AFC5C5D0C0F /* InstrumentWatchlistStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = InstrumentWatchlistStore.swift; path = Aevium/App/InstrumentWatchlistStore.swift; sourceTree = "<group>"; };
+		5651D22EFD665D70237C8617 /* MarketDataRepository.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MarketDataRepository.swift; path = Aevium/Data/MarketDataRepository.swift; sourceTree = "<group>"; };
+		56579288D00231FD5FF72E1B /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ContentView.swift; path = Aevium/UI/ContentView.swift; sourceTree = "<group>"; };
+		59D71A0752B988FAC475C4F6 /* klines.json */ = {isa = PBXFileReference; includeInIndex = 1; name = klines.json; path = AeviumTests/Fixtures/klines.json; sourceTree = "<group>"; };
+		5ACBBB260A1A7372713A975F /* klineStream.json */ = {isa = PBXFileReference; includeInIndex = 1; name = klineStream.json; path = AeviumTests/Fixtures/klineStream.json; sourceTree = "<group>"; };
+		5ADC35B50FFEA2A5127E8DC5 /* rateLimit.json */ = {isa = PBXFileReference; includeInIndex = 1; name = rateLimit.json; path = AeviumTests/Fixtures/rateLimit.json; sourceTree = "<group>"; };
+		5BFBA519BC76083EE0E435AF /* WatchlistStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WatchlistStoreTests.swift; path = AeviumTests/WatchlistStoreTests.swift; sourceTree = "<group>"; };
+		6A1FD4CF7CFE1F211DA601F6 /* exchangeInfo.json */ = {isa = PBXFileReference; includeInIndex = 1; name = exchangeInfo.json; path = AeviumTests/Fixtures/exchangeInfo.json; sourceTree = "<group>"; };
+		71F6B589B54F8E0CB955822A /* AeviumMarketViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AeviumMarketViewModel.swift; path = Aevium/ViewModels/AeviumMarketViewModel.swift; sourceTree = "<group>"; };
+		755744A9DC5C0BC054521784 /* AeviumMetalSeriesProcessor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AeviumMetalSeriesProcessor.swift; path = Aevium/Compute/AeviumMetalSeriesProcessor.swift; sourceTree = "<group>"; };
+		775E59F608A687EA9746A7B2 /* AppEnvironment.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppEnvironment.swift; path = Aevium/App/AppEnvironment.swift; sourceTree = "<group>"; };
+		7989F4260D7F1D7F974D70C3 /* SQLiteMarketDataStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SQLiteMarketDataStore.swift; path = Aevium/Data/SQLiteMarketDataStore.swift; sourceTree = "<group>"; };
+		8288AFE177850C772AA232B7 /* MarketSeriesCPU.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MarketSeriesCPU.swift; path = Aevium/Compute/MarketSeriesCPU.swift; sourceTree = "<group>"; };
+		843D7780C3C77FB022EE96EC /* CryptoMarketDataStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CryptoMarketDataStore.swift; path = Aevium/Data/CryptoMarketDataStore.swift; sourceTree = "<group>"; };
+		84AF49A774EDEFD5DC5D2391 /* invalidSymbol.json */ = {isa = PBXFileReference; includeInIndex = 1; name = invalidSymbol.json; path = AeviumTests/Fixtures/invalidSymbol.json; sourceTree = "<group>"; };
+		870A19F876F21F5204C848C2 /* FinnhubStockProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FinnhubStockProvider.swift; path = Aevium/Data/FinnhubStockProvider.swift; sourceTree = "<group>"; };
+		87EF04A6B0DA64FD41877D12 /* MarketDataProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MarketDataProvider.swift; path = Aevium/Data/MarketDataProvider.swift; sourceTree = "<group>"; };
+		9395CD855823C5C19B991A4D /* MarketDataEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MarketDataEngine.swift; path = Aevium/Data/MarketDataEngine.swift; sourceTree = "<group>"; };
+		B3EA1BEBE25D0F1928D4C3D8 /* BinanceMarketClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BinanceMarketClient.swift; path = Aevium/Data/BinanceMarketClient.swift; sourceTree = "<group>"; };
+		BF129EF5E034274395530206 /* BackfillService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BackfillService.swift; path = Aevium/Data/BackfillService.swift; sourceTree = "<group>"; };
+		C669E3880A431C0B6092F213 /* CryptoBackendTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CryptoBackendTests.swift; path = AeviumTests/CryptoBackendTests.swift; sourceTree = "<group>"; };
+		CE2A27C98951117C69609AC3 /* MarketDataModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MarketDataModels.swift; path = Aevium/Data/MarketDataModels.swift; sourceTree = "<group>"; };
+		D2ADAB62EE0E9B33BB81557B /* CryptoMarketDataModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CryptoMarketDataModels.swift; path = Aevium/Data/CryptoMarketDataModels.swift; sourceTree = "<group>"; };
+		E6FFE1E27996FD33336B1678 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
+		F70D6B88B3190C09DA55A826 /* LiveIngestionService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LiveIngestionService.swift; path = Aevium/Data/LiveIngestionService.swift; sourceTree = "<group>"; };
+		F7755C17D525C7C8C04C1DAC /* Aevium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Aevium.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		6FB7D2FB7727DFC4C7CFFD07 /* Frameworks */ = {
+		334831B7268158BD4F5AD089 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AB18E49715021C157433376A /* Cocoa.framework in Frameworks */,
+				D3D1554FA5ED302A49864061 /* Cocoa.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D8AAC794B9AF41D972C6FD27 /* Frameworks */ = {
+		D5A26DB8FA5476224709DAB8 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				10B271BDFE045B4262540666 /* Cocoa.framework in Frameworks */,
+				B7718F7A3A5A78DC055455D1 /* Cocoa.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		2E9581E2177480B985C651FC /* Products */ = {
+		1D50A18F86A17636E038B22A /* OS X */ = {
 			isa = PBXGroup;
 			children = (
-				CEB95E2DB0DC8813091F16D3 /* Aevium.app */,
-				EB1BEFCEA070027803CCBE5D /* AeviumTests.xctest */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
-		64B56F68AD64B0B1A1499D0F /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-				BD180EE0C7A869C2B5A14C31 /* OS X */,
-			);
-			name = Frameworks;
-			sourceTree = "<group>";
-		};
-		BD180EE0C7A869C2B5A14C31 /* OS X */ = {
-			isa = PBXGroup;
-			children = (
-				220C3F313EED5FDBD39B1968 /* Cocoa.framework */,
+				E6FFE1E27996FD33336B1678 /* Cocoa.framework */,
 			);
 			name = "OS X";
 			sourceTree = "<group>";
 		};
-		BFB55926061886ABB7C49442 /* AeviumTests */ = {
+		5CBAB94E7740BDABCFC97A5B /* Aevium */ = {
 			isa = PBXGroup;
 			children = (
-				A88677BD4C44C344F66FC0EF /* CryptoBackendTests.swift */,
-				3A9B6D012319071AA9E88A52 /* exchangeInfo.json */,
-				CA7AFA35344651D53DBD6DC6 /* invalidSymbol.json */,
-				FFA81F11AB6DBDDCBF5CD4E2 /* klineStream.json */,
-				BE012CFBC5E0CE6B6F5BBF82 /* klines.json */,
-				13AA91E10F70C0DCBAA64242 /* rateLimit.json */,
-				4FBDCFA6C0DF169171093E42 /* ticker24hr.json */,
-			);
-			name = AeviumTests;
-			sourceTree = "<group>";
-		};
-		CE74B77BCE62B56013CE7B1C /* Aevium */ = {
-			isa = PBXGroup;
-			children = (
-				67E632E61A6E376F73534648 /* AeviumAPIKeyStore.swift */,
-				EAC20540EC279B2AA6EBA270 /* AeviumApp.swift */,
-				5097CF3755983F80B39E65E5 /* AppEnvironment.swift */,
-				71339AE2594DED3FEE0F04EA /* AeviumMetalSeriesProcessor.swift */,
-				FF9ACC1A72731FC80BC37E8C /* MarketSeriesCPU.swift */,
-				37C86801D94828046AA987A5 /* BackfillService.swift */,
-				74F44250559849902D4DA88D /* BinanceMarketClient.swift */,
-				7145EA65C11B872D03B9F943 /* BinanceProvider.swift */,
-				352D03ED7784E579A2E3B1E7 /* CryptoMarketDataModels.swift */,
-				3EF79C40CC556931C033850F /* CryptoMarketDataStore.swift */,
-				C7AC6057374055F3CBAE64A6 /* FinnhubStockProvider.swift */,
-				7B94B89F430A76BADA92B98A /* LiveIngestionService.swift */,
-				CA2B95F3188B0DAA8E8F6567 /* MarketDataEngine.swift */,
-				2284B989B20FC059C9804B8E /* MarketDataModels.swift */,
-				07CC8ACB68E8F050FCAF7DD5 /* MarketDataProvider.swift */,
-				CE7D8FC835E37383B7844491 /* MarketDataRepository.swift */,
-				A5152103D9BEDA19D88FFAD6 /* SQLiteMarketDataStore.swift */,
-				932B6899F910073AEFDE96D6 /* ContentView.swift */,
-				D3E3FE2136A79EA8DC704571 /* OverviewWindow.swift */,
-				37BC940A930325FE9E098D3B /* AeviumMarketViewModel.swift */,
+				1A7B234747E0E7F120161C5E /* AeviumAPIKeyStore.swift */,
+				390053607A7FAEC5EC43B0E8 /* AeviumApp.swift */,
+				775E59F608A687EA9746A7B2 /* AppEnvironment.swift */,
+				563A3CF04DFC7AFC5C5D0C0F /* InstrumentWatchlistStore.swift */,
+				755744A9DC5C0BC054521784 /* AeviumMetalSeriesProcessor.swift */,
+				8288AFE177850C772AA232B7 /* MarketSeriesCPU.swift */,
+				BF129EF5E034274395530206 /* BackfillService.swift */,
+				B3EA1BEBE25D0F1928D4C3D8 /* BinanceMarketClient.swift */,
+				54CE646B60AE8BA8C246681E /* BinanceProvider.swift */,
+				D2ADAB62EE0E9B33BB81557B /* CryptoMarketDataModels.swift */,
+				843D7780C3C77FB022EE96EC /* CryptoMarketDataStore.swift */,
+				870A19F876F21F5204C848C2 /* FinnhubStockProvider.swift */,
+				F70D6B88B3190C09DA55A826 /* LiveIngestionService.swift */,
+				9395CD855823C5C19B991A4D /* MarketDataEngine.swift */,
+				CE2A27C98951117C69609AC3 /* MarketDataModels.swift */,
+				87EF04A6B0DA64FD41877D12 /* MarketDataProvider.swift */,
+				5651D22EFD665D70237C8617 /* MarketDataRepository.swift */,
+				7989F4260D7F1D7F974D70C3 /* SQLiteMarketDataStore.swift */,
+				56579288D00231FD5FF72E1B /* ContentView.swift */,
+				1994F091EB5CAB2AAAA40D9F /* OverviewWindow.swift */,
+				71F6B589B54F8E0CB955822A /* AeviumMarketViewModel.swift */,
 			);
 			name = Aevium;
 			sourceTree = "<group>";
 		};
-		DC910ABCD866C659F9FB1C30 = {
+		61EAE4DF4C088E6D8E49D74A /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				2E9581E2177480B985C651FC /* Products */,
-				64B56F68AD64B0B1A1499D0F /* Frameworks */,
-				CE74B77BCE62B56013CE7B1C /* Aevium */,
-				BFB55926061886ABB7C49442 /* AeviumTests */,
+				F7755C17D525C7C8C04C1DAC /* Aevium.app */,
+				0003E3DE66AB0011A1E941AC /* AeviumTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		6FC3D31072A65A108F191AEE /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				1D50A18F86A17636E038B22A /* OS X */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		C0C6BF956613318B46D00B4E /* AeviumTests */ = {
+			isa = PBXGroup;
+			children = (
+				C669E3880A431C0B6092F213 /* CryptoBackendTests.swift */,
+				5BFBA519BC76083EE0E435AF /* WatchlistStoreTests.swift */,
+				6A1FD4CF7CFE1F211DA601F6 /* exchangeInfo.json */,
+				84AF49A774EDEFD5DC5D2391 /* invalidSymbol.json */,
+				5ACBBB260A1A7372713A975F /* klineStream.json */,
+				59D71A0752B988FAC475C4F6 /* klines.json */,
+				5ADC35B50FFEA2A5127E8DC5 /* rateLimit.json */,
+				276F8B387AD52A771D5DB309 /* ticker24hr.json */,
+			);
+			name = AeviumTests;
+			sourceTree = "<group>";
+		};
+		CA71A3C55EF57696CE61C808 = {
+			isa = PBXGroup;
+			children = (
+				61EAE4DF4C088E6D8E49D74A /* Products */,
+				6FC3D31072A65A108F191AEE /* Frameworks */,
+				5CBAB94E7740BDABCFC97A5B /* Aevium */,
+				C0C6BF956613318B46D00B4E /* AeviumTests */,
 			);
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		03D90A621C48A5646A20B857 /* Aevium */ = {
+		1C1A0110702100D2764A330F /* Aevium */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 6CFE92FDA3CEFD1C4A4E7B37 /* Build configuration list for PBXNativeTarget "Aevium" */;
+			buildConfigurationList = 4F8E734B9A86B7EE3C0C3E6E /* Build configuration list for PBXNativeTarget "Aevium" */;
 			buildPhases = (
-				64D05A4DFDF24D51504CA573 /* Sources */,
-				D8AAC794B9AF41D972C6FD27 /* Frameworks */,
-				30FD8F3FD4DE1475BE886E5E /* Resources */,
+				6AAA44ED6292082835A00050 /* Sources */,
+				334831B7268158BD4F5AD089 /* Frameworks */,
+				4A40575796FF4DE88BC7DF04 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -194,37 +200,37 @@
 			);
 			name = Aevium;
 			productName = Aevium;
-			productReference = CEB95E2DB0DC8813091F16D3 /* Aevium.app */;
+			productReference = F7755C17D525C7C8C04C1DAC /* Aevium.app */;
 			productType = "com.apple.product-type.application";
 		};
-		337472F04360C36245AE310C /* AeviumTests */ = {
+		7642B2DC78793F7E8A5D3C48 /* AeviumTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A369F561E2009834F0774E9C /* Build configuration list for PBXNativeTarget "AeviumTests" */;
+			buildConfigurationList = FD6A269C1539290F2F3818A1 /* Build configuration list for PBXNativeTarget "AeviumTests" */;
 			buildPhases = (
-				856AB6723CAA485B8B0D5FD0 /* Sources */,
-				6FB7D2FB7727DFC4C7CFFD07 /* Frameworks */,
-				8A77D8F75BEF5B18C84FA9B2 /* Resources */,
+				A9DB11A7A824AD7B151E6B67 /* Sources */,
+				D5A26DB8FA5476224709DAB8 /* Frameworks */,
+				A46B5BBC49CA9F933A446573 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				14DF0413F3EF0287C3EA9B3B /* PBXTargetDependency */,
+				C1DAA6FA970B9174C6BAA01C /* PBXTargetDependency */,
 			);
 			name = AeviumTests;
 			productName = AeviumTests;
-			productReference = EB1BEFCEA070027803CCBE5D /* AeviumTests.xctest */;
+			productReference = 0003E3DE66AB0011A1E941AC /* AeviumTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		D6E8390836D0EB4D654B3212 /* Project object */ = {
+		85813CDCF8E2F30027E0D5A2 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				LastSwiftUpdateCheck = 1600;
 				LastUpgradeCheck = 1600;
 			};
-			buildConfigurationList = 75C0C93FF6A6B186CCE4EC9C /* Build configuration list for PBXProject "Aevium" */;
+			buildConfigurationList = CDC49089245D25386FD9BD5F /* Build configuration list for PBXProject "Aevium" */;
 			compatibilityVersion = "Xcode 16.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -232,109 +238,125 @@
 				en,
 				Base,
 			);
-			mainGroup = DC910ABCD866C659F9FB1C30;
+			mainGroup = CA71A3C55EF57696CE61C808;
 			minimizedProjectReferenceProxies = 0;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = 2E9581E2177480B985C651FC /* Products */;
+			productRefGroup = 61EAE4DF4C088E6D8E49D74A /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				03D90A621C48A5646A20B857 /* Aevium */,
-				337472F04360C36245AE310C /* AeviumTests */,
+				1C1A0110702100D2764A330F /* Aevium */,
+				7642B2DC78793F7E8A5D3C48 /* AeviumTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		30FD8F3FD4DE1475BE886E5E /* Resources */ = {
+		4A40575796FF4DE88BC7DF04 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		8A77D8F75BEF5B18C84FA9B2 /* Resources */ = {
+		A46B5BBC49CA9F933A446573 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3244E6FE4FF94F5ED6331077 /* exchangeInfo.json in Resources */,
-				C41BC50C67535E75B6CEC5F2 /* invalidSymbol.json in Resources */,
-				30B57233E0364CE93FCCC113 /* klineStream.json in Resources */,
-				69A73ACFD5A57D54B1001ABC /* klines.json in Resources */,
-				6B00F61E6859204C44A350DA /* rateLimit.json in Resources */,
-				E960AC2F7066CB0AC0E17A71 /* ticker24hr.json in Resources */,
+				369BCBDF98D59BA874DD8ECE /* exchangeInfo.json in Resources */,
+				5090B0A3CB61B8A54EDA2076 /* invalidSymbol.json in Resources */,
+				E7B8736B8F94CDF3BE2F9346 /* klineStream.json in Resources */,
+				1B672793577E03C1668E5A68 /* klines.json in Resources */,
+				B21B07FD097D2B0F49382510 /* rateLimit.json in Resources */,
+				08C52464BF2CEE90A9096FF7 /* ticker24hr.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		64D05A4DFDF24D51504CA573 /* Sources */ = {
+		6AAA44ED6292082835A00050 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				07C3342D7A58040E02099AA9 /* AeviumAPIKeyStore.swift in Sources */,
-				FC360CD781765F43C692A3DA /* AeviumApp.swift in Sources */,
-				3AB02E21EE7924B356DF7104 /* AppEnvironment.swift in Sources */,
-				4E8BF2D06CC9C1F50DD72AE9 /* AeviumMetalSeriesProcessor.swift in Sources */,
-				DCB2E6A9D671F25593C5F34E /* MarketSeriesCPU.swift in Sources */,
-				A16CFCC593FCC2E3F5846F1E /* BackfillService.swift in Sources */,
-				E0E921469BE44B6FF73CE4B7 /* BinanceMarketClient.swift in Sources */,
-				1ACA96E08117972B4454444D /* BinanceProvider.swift in Sources */,
-				733AB0BC95E2E4B98E598F63 /* CryptoMarketDataModels.swift in Sources */,
-				F747F274ACEA557340C93752 /* CryptoMarketDataStore.swift in Sources */,
-				5C98D3428339E9F3752DBE01 /* FinnhubStockProvider.swift in Sources */,
-				E0E88D640F9050282A89CEA0 /* LiveIngestionService.swift in Sources */,
-				4B64469CD66548C24D7101D3 /* MarketDataEngine.swift in Sources */,
-				5E5F90B82A1BEAC729B2278D /* MarketDataModels.swift in Sources */,
-				32745B0574DCD71B55DA1888 /* MarketDataProvider.swift in Sources */,
-				DE8657F933C8ED1E428524FD /* MarketDataRepository.swift in Sources */,
-				F32E73FED156F66B2AC7C725 /* SQLiteMarketDataStore.swift in Sources */,
-				B41DA442A16C7F3C6735C74F /* ContentView.swift in Sources */,
-				1EBFC261A9CB0E0C2F615D47 /* OverviewWindow.swift in Sources */,
-				B994DFE7E07CA2FA8467A535 /* AeviumMarketViewModel.swift in Sources */,
+				747D1E2818E8279D53F4F0A9 /* AeviumAPIKeyStore.swift in Sources */,
+				A6B80E1A2418D43A72C0A75F /* AeviumApp.swift in Sources */,
+				495298D7D12D2FC2F60A1564 /* AppEnvironment.swift in Sources */,
+				529EF05E40157B382A64AC87 /* InstrumentWatchlistStore.swift in Sources */,
+				5D22C972BAA19DE354B501B9 /* AeviumMetalSeriesProcessor.swift in Sources */,
+				3AF073124F4E433D38AE16FE /* MarketSeriesCPU.swift in Sources */,
+				EDC4E709E2A7A56D6FD59505 /* BackfillService.swift in Sources */,
+				8F03156170DBEC2C7FA183B5 /* BinanceMarketClient.swift in Sources */,
+				8B7F92E781E1EF8C0CFB025B /* BinanceProvider.swift in Sources */,
+				2E9757FC54C2ABF0523AC314 /* CryptoMarketDataModels.swift in Sources */,
+				DE44277ED621EF14B3064726 /* CryptoMarketDataStore.swift in Sources */,
+				93B76A8CFB110CB4C3B36F96 /* FinnhubStockProvider.swift in Sources */,
+				ECCDB92140516541DC38DDBB /* LiveIngestionService.swift in Sources */,
+				A7093F81EEE15229A78532C1 /* MarketDataEngine.swift in Sources */,
+				FA1C26DB1051224E52D0166C /* MarketDataModels.swift in Sources */,
+				BE11025FA784CF7665763D2C /* MarketDataProvider.swift in Sources */,
+				F7E1A11FACA9C4FE2BD259DE /* MarketDataRepository.swift in Sources */,
+				76626D46C42D6E4AFBC9F598 /* SQLiteMarketDataStore.swift in Sources */,
+				464C6208235EA6253D172042 /* ContentView.swift in Sources */,
+				84576F5287E1F72CA7B72D97 /* OverviewWindow.swift in Sources */,
+				07DE063FADE1A0998177B576 /* AeviumMarketViewModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		856AB6723CAA485B8B0D5FD0 /* Sources */ = {
+		A9DB11A7A824AD7B151E6B67 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E7DACDB678D414F142EA13A9 /* CryptoBackendTests.swift in Sources */,
+				18C7CDF425BE13DF29066E4A /* CryptoBackendTests.swift in Sources */,
+				56A7876AA72ED942F7991064 /* WatchlistStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		14DF0413F3EF0287C3EA9B3B /* PBXTargetDependency */ = {
+		C1DAA6FA970B9174C6BAA01C /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = Aevium;
-			target = 03D90A621C48A5646A20B857 /* Aevium */;
-			targetProxy = 075A778E0E67CB40B7AB732E /* PBXContainerItemProxy */;
+			target = 1C1A0110702100D2764A330F /* Aevium */;
+			targetProxy = 05A9AA9CB7F1B72D24F22335 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		09A28E173414356F4BAEA7DE /* Debug */ = {
+		0BD6BADFCB7F2B57680A3B70 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
-				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks @executable_path/../PlugIns";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.aevium.desktop;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aevium.desktop.tests;
 				SDKROOT = macosx;
-				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Aevium.app/Contents/MacOS/Aevium";
+			};
+			name = Release;
+		};
+		5065D60E529E684A98E85D97 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks @executable_path/../PlugIns";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aevium.desktop.tests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Aevium.app/Contents/MacOS/Aevium";
 			};
 			name = Debug;
 		};
-		3662C4CB75D5F3CAECA372B4 /* Release */ = {
+		52C403CAAAAD750421ACC85E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -396,23 +418,7 @@
 			};
 			name = Release;
 		};
-		472A116B02FB89CD6A8B6EA8 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks @executable_path/../PlugIns";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.aevium.desktop.tests;
-				SDKROOT = macosx;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Aevium.app/Contents/MacOS/Aevium";
-			};
-			name = Release;
-		};
-		51E16D74382B395062379756 /* Debug */ = {
+		5BE7089AE5DEC17A44923784 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -481,7 +487,25 @@
 			};
 			name = Debug;
 		};
-		AB96C99D56D16C95D2320B4E /* Release */ = {
+		B1AE029A9D03461D9383DFB9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aevium.desktop;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		F65349255D7E99C3826B2CC1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -499,53 +523,37 @@
 			};
 			name = Release;
 		};
-		B17F1583BFB99DA20EB6CF90 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks @executable_path/../PlugIns";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.aevium.desktop.tests;
-				SDKROOT = macosx;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Aevium.app/Contents/MacOS/Aevium";
-			};
-			name = Debug;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		6CFE92FDA3CEFD1C4A4E7B37 /* Build configuration list for PBXNativeTarget "Aevium" */ = {
+		4F8E734B9A86B7EE3C0C3E6E /* Build configuration list for PBXNativeTarget "Aevium" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				AB96C99D56D16C95D2320B4E /* Release */,
-				09A28E173414356F4BAEA7DE /* Debug */,
+				F65349255D7E99C3826B2CC1 /* Release */,
+				B1AE029A9D03461D9383DFB9 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		75C0C93FF6A6B186CCE4EC9C /* Build configuration list for PBXProject "Aevium" */ = {
+		CDC49089245D25386FD9BD5F /* Build configuration list for PBXProject "Aevium" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				51E16D74382B395062379756 /* Debug */,
-				3662C4CB75D5F3CAECA372B4 /* Release */,
+				5BE7089AE5DEC17A44923784 /* Debug */,
+				52C403CAAAAD750421ACC85E /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A369F561E2009834F0774E9C /* Build configuration list for PBXNativeTarget "AeviumTests" */ = {
+		FD6A269C1539290F2F3818A1 /* Build configuration list for PBXNativeTarget "AeviumTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				472A116B02FB89CD6A8B6EA8 /* Release */,
-				B17F1583BFB99DA20EB6CF90 /* Debug */,
+				0BD6BADFCB7F2B57680A3B70 /* Release */,
+				5065D60E529E684A98E85D97 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
-	rootObject = D6E8390836D0EB4D654B3212 /* Project object */;
+	rootObject = 85813CDCF8E2F30027E0D5A2 /* Project object */;
 }

@@ -193,6 +193,7 @@ struct ContentView: View {
                 AeviumWorkspace(
                     market: market,
                     points: renderedPoints,
+                    watchlist: environment.watchlist,
                     selectedTab: $selectedTab,
                     selectedRange: $selectedRange,
                     displayedRange: displayedRange,
@@ -301,6 +302,7 @@ private struct AeviumWorkspace: View {
 
     @ObservedObject var market: AeviumMarketViewModel
     let points: [GraphPoint]
+    @ObservedObject var watchlist: InstrumentWatchlistStore
     @Binding var selectedTab: WorkspaceTab
     @Binding var selectedRange: ChartRange
     let displayedRange: ChartRange
@@ -354,10 +356,13 @@ private struct AeviumWorkspace: View {
                                 MarketInspector(
                                     points: points,
                                     analytics: analytics,
+                                    selectedInstrument: market.selectedInstrument,
+                                    watchlist: watchlist,
                                     instrumentSymbol: instrumentSymbol,
                                     instrumentSession: instrumentSession,
                                     selectedRange: displayedRange,
-                                    isUp: isUp
+                                    isUp: isUp,
+                                    onSelectWatchlistInstrument: market.selectInstrument
                                 )
                                 .frame(width: inspectorMaxWidth, alignment: .trailing)
                                 .offset(x: (1 - inspectorReveal) * 14)
@@ -370,6 +375,7 @@ private struct AeviumWorkspace: View {
 
                         ChartTopControls(
                             market: market,
+                            watchlist: watchlist,
                             selectedRange: $selectedRange,
                             isInspectorOpen: inspectorTargetOpen,
                             onToggleInspector: toggleInspector
@@ -1354,6 +1360,7 @@ private struct ChartStage: View {
 
 private struct ChartTopControls: View {
     @ObservedObject var market: AeviumMarketViewModel
+    @ObservedObject var watchlist: InstrumentWatchlistStore
     @Binding var selectedRange: ChartRange
     let isInspectorOpen: Bool
     let onToggleInspector: () -> Void
@@ -1361,6 +1368,7 @@ private struct ChartTopControls: View {
     var body: some View {
         HStack(spacing: 8) {
             InstrumentSearchControl(market: market)
+            watchlistToggle
             AeviumRangeSelector(selectedRange: $selectedRange)
 
             Button(action: onToggleInspector) {
@@ -1378,6 +1386,26 @@ private struct ChartTopControls: View {
         }
         .fixedSize(horizontal: true, vertical: false)
         .compositingGroup()
+    }
+
+    private var watchlistToggle: some View {
+        let isSaved = watchlist.contains(market.selectedInstrument)
+
+        return Button {
+            watchlist.toggle(market.selectedInstrument)
+        } label: {
+            Image(systemName: isSaved ? "star.fill" : "star")
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(isSaved ? Color(red: 0.92, green: 0.78, blue: 0.44) : .white.opacity(0.56))
+                .frame(width: 30, height: 30)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(isSaved ? Color(red: 0.92, green: 0.78, blue: 0.44).opacity(0.13) : Color.white.opacity(0.045))
+                )
+        }
+        .buttonStyle(.plain)
+        .help(isSaved ? "Remove from watchlist" : "Add to watchlist")
+        .animation(Motion.micro, value: isSaved)
     }
 }
 
@@ -1554,10 +1582,13 @@ private struct AeviumRangeSelector: View {
 private struct MarketInspector: View {
     let points: [GraphPoint]
     let analytics: MarketSeriesAnalytics
+    let selectedInstrument: InstrumentMetadata
+    @ObservedObject var watchlist: InstrumentWatchlistStore
     let instrumentSymbol: String
     let instrumentSession: String
     let selectedRange: ChartRange
     let isUp: Bool
+    let onSelectWatchlistInstrument: (InstrumentMetadata) -> Void
 
     private var displaySymbol: String {
         instrumentSymbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
@@ -1810,6 +1841,9 @@ private struct MarketInspector: View {
                             )
                     }
                 }
+
+                watchlistCard
+
                 card(tint: Color(red: 0.13, green: 0.20, blue: 0.28)) {
                     sectionHeader("ORDER FLOW")
 
@@ -1986,6 +2020,104 @@ private struct MarketInspector: View {
             .padding(.bottom, 18)
         }
         .background(Color.black.opacity(0.10))
+    }
+
+    private var watchlistCard: some View {
+        card(tint: Color(red: 0.24, green: 0.22, blue: 0.14)) {
+            HStack(alignment: .firstTextBaseline) {
+                sectionHeader("WATCHLIST")
+                Spacer()
+                Text("\(watchlist.instruments.count)")
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.34))
+            }
+
+            if watchlist.instruments.isEmpty {
+                Text("No saved symbols")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.44))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(watchlist.instruments.prefix(8), id: \.id) { instrument in
+                        watchlistRow(instrument)
+                    }
+                }
+            }
+        }
+    }
+
+    private func watchlistRow(_ instrument: InstrumentMetadata) -> some View {
+        let isSelected = instrument.id == selectedInstrument.id
+
+        return HStack(spacing: 6) {
+            Button {
+                onSelectWatchlistInstrument(instrument)
+            } label: {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(isSelected ? Color(red: 0.92, green: 0.78, blue: 0.44) : Color.white.opacity(0.16))
+                        .frame(width: 6, height: 6)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(compactWatchlistSymbol(instrument))
+                            .font(.system(size: 12, weight: .semibold, design: .default))
+                            .foregroundStyle(.white.opacity(0.86))
+                            .lineLimit(1)
+
+                        Text(watchlistSubtitle(instrument))
+                            .font(.system(size: 9.5, weight: .medium, design: .default))
+                            .foregroundStyle(.white.opacity(0.38))
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                watchlist.remove(id: instrument.id)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.34))
+                    .frame(width: 22, height: 22)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.white.opacity(0.045))
+                    )
+            }
+            .buttonStyle(.plain)
+            .help("Remove")
+        }
+        .padding(.leading, 9)
+        .padding(.trailing, 7)
+        .frame(height: 38)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isSelected ? Color.white.opacity(0.085) : Color.white.opacity(0.035))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(isSelected ? Color(red: 0.92, green: 0.78, blue: 0.44).opacity(0.24) : Color.white.opacity(0.055), lineWidth: 1)
+                )
+        )
+    }
+
+    private func compactWatchlistSymbol(_ instrument: InstrumentMetadata) -> String {
+        instrument.compactTitle
+            .replacingOccurrences(of: " / ", with: "/")
+            .uppercased()
+    }
+
+    private func watchlistSubtitle(_ instrument: InstrumentMetadata) -> String {
+        if !instrument.name.isEmpty {
+            return instrument.name
+        }
+
+        return instrument.exchange.isEmpty ? instrument.provider.uppercased() : instrument.exchange
     }
 
     private var signedAbsoluteText: String {

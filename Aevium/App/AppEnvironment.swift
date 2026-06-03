@@ -8,9 +8,12 @@ struct InstrumentSelectionRequest: Identifiable {
 @MainActor
 final class AppEnvironment: ObservableObject {
     let marketDataEngine: MarketDataEngine
+    let watchlist: InstrumentWatchlistStore
     @Published var instrumentSelectionRequest: InstrumentSelectionRequest?
 
     init() {
+        watchlist = InstrumentWatchlistStore()
+
         do {
             let dbURL = try Self.databaseURL()
             marketDataEngine = try MarketDataEngine(databaseURL: dbURL)
