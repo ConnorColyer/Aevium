@@ -11,6 +11,8 @@ private extension Notification.Name {
 private enum Motion {
     static let standard = Animation.easeInOut(duration: 0.22)
     static let micro = Animation.linear(duration: 0.10)
+    static let chartTransition = Animation.easeInOut(duration: 0.34)
+    static let chartPending = Animation.easeInOut(duration: 0.24)
 }
 
 private enum WorkspaceTab {
@@ -157,16 +159,21 @@ struct ContentView: View {
 
     private let fallbackPoints = Self.makeSeries()
 
+    private var displayedRange: ChartRange {
+        ChartRange(marketTimeRange: market.displayedRange)
+    }
+
     private var visiblePoints: [GraphPoint] {
+        let range = displayedRange
         let latestDate = market.points.last?.date ?? Date()
-        let cutoff = latestDate.addingTimeInterval(-selectedRange.marketTimeRange.duration)
+        let cutoff = latestDate.addingTimeInterval(-range.marketTimeRange.duration)
         let source = market.points.filter { $0.date >= cutoff }
         let live = source.enumerated().map { index, point in
             GraphPoint(index: index, date: point.date, value: point.price)
         }
 
         guard live.count > 1 else {
-            return selectedRange.slice(from: fallbackPoints)
+            return range.slice(from: fallbackPoints)
         }
 
         return live
@@ -188,11 +195,13 @@ struct ContentView: View {
                     points: renderedPoints,
                     selectedTab: $selectedTab,
                     selectedRange: $selectedRange,
+                    displayedRange: displayedRange,
                     instrumentSymbol: market.selectedInstrument.compactTitle,
                     instrumentSession: market.selectedInstrument.session,
                     syncState: market.syncState,
                     analytics: analytics,
                     isUp: isUp,
+                    isRangeTransitioning: market.isRangeTransitioning,
                     isOldStyleFullscreen: isOldStyleFullscreen
                 )
 
@@ -294,11 +303,13 @@ private struct AeviumWorkspace: View {
     let points: [GraphPoint]
     @Binding var selectedTab: WorkspaceTab
     @Binding var selectedRange: ChartRange
+    let displayedRange: ChartRange
     let instrumentSymbol: String
     let instrumentSession: String
     let syncState: SyncState
     let analytics: MarketSeriesAnalytics
     let isUp: Bool
+    let isRangeTransitioning: Bool
     let isOldStyleFullscreen: Bool
 
     private let inspectorMaxWidth: CGFloat = 304
@@ -325,12 +336,13 @@ private struct AeviumWorkspace: View {
                 if selectedTab == .market {
                     ZStack(alignment: .topTrailing) {
                         HStack(spacing: 0) {
-                            ChartStage(
+                            SmoothRangeChartStage(
                                 points: points,
                                 analytics: analytics,
-                                selectedRange: $selectedRange,
+                                selectedRange: displayedRange,
                                 isUp: isUp,
-                                drawerReveal: inspectorReveal
+                                drawerReveal: inspectorReveal,
+                                isRangeTransitioning: isRangeTransitioning
                             )
 
                             Rectangle()
@@ -344,7 +356,7 @@ private struct AeviumWorkspace: View {
                                     analytics: analytics,
                                     instrumentSymbol: instrumentSymbol,
                                     instrumentSession: instrumentSession,
-                                    selectedRange: selectedRange,
+                                    selectedRange: displayedRange,
                                     isUp: isUp
                                 )
                                 .frame(width: inspectorMaxWidth, alignment: .trailing)
@@ -712,10 +724,176 @@ private struct FullscreenWindowControls: View {
     }
 }
 
+private struct SmoothRangeChartStage: View {
+    let points: [GraphPoint]
+    let analytics: MarketSeriesAnalytics
+    let selectedRange: ChartRange
+    let isUp: Bool
+    let drawerReveal: CGFloat
+    let isRangeTransitioning: Bool
+
+    @State private var lastSnapshot: ChartSnapshot?
+    @State private var outgoingSnapshot: ChartSnapshot?
+    @State private var incomingOpacity = 1.0
+    @State private var outgoingOpacity = 0.0
+    @State private var transitionTask: Task<Void, Never>?
+
+    private struct ChartSnapshot {
+        struct Key: Equatable {
+            let range: ChartRange
+            let count: Int
+            let firstID: TimeInterval?
+            let lastID: TimeInterval?
+            let lowValue: Double
+            let highValue: Double
+            let lastValue: Double
+            let isUp: Bool
+            let drawerReveal: CGFloat
+        }
+
+        let points: [GraphPoint]
+        let analytics: MarketSeriesAnalytics
+        let range: ChartRange
+        let isUp: Bool
+        let drawerReveal: CGFloat
+
+        var key: Key {
+            Key(
+                range: range,
+                count: points.count,
+                firstID: points.first?.id,
+                lastID: points.last?.id,
+                lowValue: analytics.lowValue,
+                highValue: analytics.highValue,
+                lastValue: analytics.lastValue,
+                isUp: isUp,
+                drawerReveal: drawerReveal
+            )
+        }
+    }
+
+    private var currentSnapshot: ChartSnapshot {
+        ChartSnapshot(
+            points: points,
+            analytics: analytics,
+            range: selectedRange,
+            isUp: isUp,
+            drawerReveal: drawerReveal
+        )
+    }
+
+    var body: some View {
+        let snapshot = currentSnapshot
+        let handoffSnapshot = activeOutgoingSnapshot(for: snapshot)
+        let handoffIsStarting = outgoingSnapshot == nil && handoffSnapshot != nil
+
+        ZStack {
+            chart(for: snapshot)
+                .id(snapshot.range.id)
+                .opacity(handoffSnapshot == nil ? pendingOpacity : (handoffIsStarting ? 0.0 : incomingOpacity))
+                .zIndex(0)
+
+            if let handoffSnapshot {
+                chart(for: handoffSnapshot)
+                    .id("outgoing-\(handoffSnapshot.range.id)")
+                    .opacity(handoffIsStarting ? 1.0 : outgoingOpacity)
+                    .zIndex(1)
+                    .allowsHitTesting(false)
+            }
+        }
+        .compositingGroup()
+        .animation(Motion.chartPending, value: isRangeTransitioning)
+        .onAppear {
+            lastSnapshot = snapshot
+        }
+        .onChange(of: snapshot.key) { _, _ in
+            reconcileTransition(to: snapshot)
+        }
+        .onDisappear {
+            transitionTask?.cancel()
+            transitionTask = nil
+        }
+    }
+
+    private var pendingOpacity: Double {
+        isRangeTransitioning ? 0.88 : 1.0
+    }
+
+    private func activeOutgoingSnapshot(for snapshot: ChartSnapshot) -> ChartSnapshot? {
+        if let outgoingSnapshot {
+            return outgoingSnapshot
+        }
+
+        guard let lastSnapshot, lastSnapshot.range != snapshot.range else {
+            return nil
+        }
+
+        return lastSnapshot
+    }
+
+    private func chart(for snapshot: ChartSnapshot) -> some View {
+        ChartStage(
+            points: snapshot.points,
+            analytics: snapshot.analytics,
+            selectedRange: snapshot.range,
+            isUp: snapshot.isUp,
+            drawerReveal: snapshot.drawerReveal
+        )
+    }
+
+    private func reconcileTransition(to snapshot: ChartSnapshot) {
+        guard let previous = lastSnapshot else {
+            lastSnapshot = snapshot
+            return
+        }
+
+        guard previous.range != snapshot.range else {
+            lastSnapshot = snapshot
+            return
+        }
+
+        startRangeTransition(from: previous, to: snapshot)
+    }
+
+    private func startRangeTransition(from previous: ChartSnapshot, to snapshot: ChartSnapshot) {
+        transitionTask?.cancel()
+
+        var transaction = Transaction()
+        transaction.animation = nil
+        withTransaction(transaction) {
+            outgoingSnapshot = previous
+            outgoingOpacity = 1.0
+            incomingOpacity = 0.0
+            lastSnapshot = snapshot
+        }
+
+        transitionTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+
+            withAnimation(Motion.chartTransition) {
+                incomingOpacity = 1.0
+                outgoingOpacity = 0.0
+            }
+
+            try? await Task.sleep(nanoseconds: 420_000_000)
+            guard !Task.isCancelled else { return }
+
+            var cleanupTransaction = Transaction()
+            cleanupTransaction.animation = nil
+            withTransaction(cleanupTransaction) {
+                outgoingSnapshot = nil
+                outgoingOpacity = 0.0
+                incomingOpacity = 1.0
+            }
+        }
+    }
+}
+
 private struct ChartStage: View {
     let points: [GraphPoint]
     let analytics: MarketSeriesAnalytics
-    @Binding var selectedRange: ChartRange
+    let selectedRange: ChartRange
     let isUp: Bool
     let drawerReveal: CGFloat
     @State private var displayedXDomain: ClosedRange<Date>?
@@ -2433,6 +2611,25 @@ private enum ChartRange: String, CaseIterable, Identifiable {
     case year = "1Y"
 
     var id: String { rawValue }
+
+    init(marketTimeRange: MarketTimeRange) {
+        switch marketTimeRange {
+        case .twentyFiveMinutes:
+            self = .twentyFiveMinutes
+        case .hour:
+            self = .hour
+        case .day:
+            self = .day
+        case .week:
+            self = .week
+        case .month:
+            self = .month
+        case .quarter:
+            self = .quarter
+        case .year:
+            self = .year
+        }
+    }
 
     var points: Int {
         switch self {

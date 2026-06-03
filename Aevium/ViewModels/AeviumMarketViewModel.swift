@@ -15,6 +15,8 @@ final class AeviumMarketViewModel: ObservableObject {
     @Published var computeSummary: AeviumComputeSummary = .cpu
     @Published var syncState: SyncState
     @Published private(set) var startupState: StartupState = .loading
+    @Published private(set) var displayedRange: MarketTimeRange = .week
+    @Published private(set) var isRangeTransitioning = false
     @Published var searchQuery = ""
     @Published var searchResults: [InstrumentMetadata] = []
     @Published var isSearching = false
@@ -33,6 +35,7 @@ final class AeviumMarketViewModel: ObservableObject {
     private struct PendingSeriesUpdate {
         let points: [LinePoint]
         let state: SyncState
+        let range: MarketTimeRange
         let cap: Int
         let fromTimestamp: Int64
         let stableBucketSeconds: Int
@@ -86,7 +89,10 @@ final class AeviumMarketViewModel: ObservableObject {
     func setRange(_ range: MarketTimeRange) {
         guard selectedRange != range else { return }
         selectedRange = range
-        resetSeries()
+        isRangeTransitioning = !points.isEmpty
+        if points.isEmpty {
+            displayedRange = range
+        }
         restartStream()
     }
 
@@ -195,6 +201,7 @@ final class AeviumMarketViewModel: ObservableObject {
                         self.enqueueSeriesUpdate(
                             points: update.points,
                             state: update.state,
+                            range: update.viewport.range,
                             cap: update.viewport.chartPointTarget,
                             fromTimestamp: update.viewport.fromTimestamp,
                             stableBucketSeconds: Self.stableBucketSeconds(for: update.viewport),
@@ -222,6 +229,7 @@ final class AeviumMarketViewModel: ObservableObject {
     private func enqueueSeriesUpdate(
         points incoming: [LinePoint],
         state: SyncState,
+        range: MarketTimeRange,
         cap: Int,
         fromTimestamp: Int64,
         stableBucketSeconds: Int,
@@ -231,6 +239,7 @@ final class AeviumMarketViewModel: ObservableObject {
             PendingSeriesUpdate(
                 points: incoming,
                 state: state,
+                range: range,
                 cap: cap,
                 fromTimestamp: fromTimestamp,
                 stableBucketSeconds: stableBucketSeconds,
@@ -266,13 +275,16 @@ final class AeviumMarketViewModel: ObservableObject {
             let visibleIncoming = update.points.filter { $0.timestamp >= update.fromTimestamp }
 
             guard !visibleIncoming.isEmpty else {
-                if visibleExisting.count != points.count {
+                if displayedRange == update.range, visibleExisting.count != points.count {
                     let result = await seriesProcessor.analyticsOnly(for: visibleExisting)
                     guard !Task.isCancelled, processingGeneration == generation else { return }
 
                     points = result.points
                     analytics = result.analytics
                     computeSummary = result.computeSummary
+                } else if update.range == selectedRange, Self.resolvesEmptyRangeTransition(update.state.state) {
+                    resetSeries()
+                    displayedRange = update.range
                 }
                 continue
             }
@@ -287,6 +299,8 @@ final class AeviumMarketViewModel: ObservableObject {
             points = result.points
             analytics = result.analytics
             computeSummary = result.computeSummary
+            displayedRange = update.range
+            isRangeTransitioning = selectedRange != update.range
 
             if startupState == .loading && !points.isEmpty {
                 startupState = .ready
@@ -303,10 +317,21 @@ final class AeviumMarketViewModel: ObservableObject {
         points = []
         analytics = .empty
         computeSummary = .cpu
+        displayedRange = selectedRange
+        isRangeTransitioning = false
     }
 
     private static func stableBucketSeconds(for viewport: MarketViewport) -> Int {
         let bucketCount = max(1, viewport.chartPointTarget / 4)
         return max(1, Int(ceil(viewport.range.duration / Double(bucketCount))))
+    }
+
+    private static func resolvesEmptyRangeTransition(_ state: IngestionConnectionState) -> Bool {
+        switch state {
+        case .connected, .rateLimited, .failed:
+            return true
+        case .idle, .connecting, .backfilling, .delayed, .disconnected:
+            return false
+        }
     }
 }
