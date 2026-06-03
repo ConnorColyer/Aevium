@@ -128,8 +128,10 @@ final class FinnhubStockProvider: @unchecked Sendable, MarketDataProvider {
         for instrument: InstrumentMetadata,
         from: Date,
         to: Date,
-        resolution: SeriesResolution
+        resolution: SeriesResolution,
+        maxPoints: Int
     ) async throws -> [LinePoint] {
+        _ = maxPoints
         guard instrument.id.type == .equity else { throw ProviderError.unsupportedInstrument }
         guard let apiKey, !apiKey.isEmpty else { throw ProviderError.missingAPIKey(provider: id) }
 
@@ -148,7 +150,7 @@ final class FinnhubStockProvider: @unchecked Sendable, MarketDataProvider {
             throw ProviderError.emptyResponse(provider: id)
         }
 
-        return zip(timestamps, closes).map { timestamp, price in
+        let points = zip(timestamps, closes).map { timestamp, price in
             LinePoint(
                 instrumentID: instrument.id,
                 timestamp: timestamp,
@@ -159,6 +161,8 @@ final class FinnhubStockProvider: @unchecked Sendable, MarketDataProvider {
                 resolutionSeconds: resolution.seconds
             )
         }
+
+        return points
     }
 
     private func fallbackSearch(query: String) -> [InstrumentMetadata] {

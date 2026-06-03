@@ -1,0 +1,35 @@
+[
+  {
+    "symbol": "BTCUSDT",
+    "priceChange": "1200.00",
+    "priceChangePercent": "1.75",
+    "lastPrice": "69000.00",
+    "highPrice": "70000.00",
+    "lowPrice": "67000.00",
+    "volume": "1000.00",
+    "quoteVolume": "69000000.00",
+    "count": 120000
+  },
+  {
+    "symbol": "SOLUSDT",
+    "priceChange": "-8.00",
+    "priceChangePercent": "-4.20",
+    "lastPrice": "182.00",
+    "highPrice": "195.00",
+    "lowPrice": "179.00",
+    "volume": "200000.00",
+    "quoteVolume": "36400000.00",
+    "count": 88000
+  },
+  {
+    "symbol": "ETHBTC",
+    "priceChange": "0.001",
+    "priceChangePercent": "0.90",
+    "lastPrice": "0.050",
+    "highPrice": "0.052",
+    "lowPrice": "0.049",
+    "volume": "9000.00",
+    "quoteVolume": "450.00",
+    "count": 9000
+  }
+]

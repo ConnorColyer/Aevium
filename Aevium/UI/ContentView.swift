@@ -18,37 +18,166 @@ private enum WorkspaceTab {
     case overview
 }
 
+private struct BootSplashView: View {
+    @State private var isAnimating = false
+    @State private var pulsePhase = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.03, green: 0.04, blue: 0.06),
+                        Color(red: 0.05, green: 0.07, blue: 0.10),
+                        Color(red: 0.02, green: 0.03, blue: 0.05)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                Circle()
+                    .fill(Color(red: 0.28, green: 0.70, blue: 0.58).opacity(0.10))
+                    .frame(width: proxy.size.width * 0.52, height: proxy.size.width * 0.52)
+                    .blur(radius: 36)
+                    .offset(x: -proxy.size.width * 0.18, y: -proxy.size.height * 0.22)
+
+                Circle()
+                    .fill(Color(red: 0.58, green: 0.78, blue: 0.98).opacity(0.08))
+                    .frame(width: proxy.size.width * 0.44, height: proxy.size.width * 0.44)
+                    .blur(radius: 42)
+                    .offset(x: proxy.size.width * 0.24, y: proxy.size.height * 0.18)
+
+                VStack(spacing: 26) {
+                    ZStack {
+                        Circle()
+                            .stroke(Color.white.opacity(0.09), lineWidth: 1)
+                            .frame(width: 238, height: 238)
+
+                        Circle()
+                            .trim(from: 0.06, to: 0.88)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.58, green: 0.92, blue: 0.74),
+                                        Color(red: 0.48, green: 0.74, blue: 0.98),
+                                        Color(red: 0.90, green: 0.66, blue: 0.98)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round)
+                            )
+                            .frame(width: 238, height: 238)
+                            .rotationEffect(.degrees(isAnimating ? 360 : 0))
+                            .shadow(color: Color(red: 0.46, green: 0.86, blue: 0.86).opacity(0.36), radius: 18)
+
+                        VStack(spacing: 12) {
+                            Text("AEVIUM")
+                                .font(.system(size: 34, weight: .semibold, design: .rounded))
+                                .tracking(11)
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.white,
+                                            Color(red: 0.72, green: 0.96, blue: 0.92),
+                                            Color(red: 0.63, green: 0.77, blue: 0.99)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .shadow(color: Color.black.opacity(0.3), radius: 8, x: 0, y: 4)
+                                .scaleEffect(pulsePhase ? 1.02 : 0.98)
+                                .opacity(pulsePhase ? 1 : 0.86)
+
+                            Text("Booting live market workspace")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .tracking(2.2)
+                                .foregroundStyle(.white.opacity(0.50))
+                        }
+                    }
+
+                    HStack(spacing: 10) {
+                        ForEach(0..<3, id: \.self) { index in
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            Color(red: 0.60, green: 0.92, blue: 0.77),
+                                            Color(red: 0.52, green: 0.74, blue: 0.98)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .frame(width: 8, height: 8)
+                                .scaleEffect(pulsePhase ? 1.0 : 0.45)
+                                .opacity(pulsePhase ? 1.0 : 0.35)
+                                .shadow(color: Color(red: 0.50, green: 0.82, blue: 0.88).opacity(0.45), radius: 8)
+                                .animation(
+                                    Animation.easeInOut(duration: 0.95)
+                                        .repeatForever(autoreverses: true)
+                                        .delay(Double(index) * 0.18),
+                                    value: pulsePhase
+                                )
+                        }
+                    }
+
+                    Text("Loading feeds, cache, and instruments")
+                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                        .tracking(1.8)
+                        .foregroundStyle(.white.opacity(0.32))
+                }
+                .frame(maxWidth: 460)
+                .padding(.horizontal, 32)
+                .offset(y: -12)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .onAppear {
+                isAnimating = true
+                pulsePhase = true
+            }
+        }
+    }
+}
+
 struct ContentView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var market = AeviumMarketViewModel()
     @State private var selectedRange: ChartRange = .week
     @State private var selectedTab: WorkspaceTab = .market
     @State private var isOldStyleFullscreen = false
+    @State private var bootMinimumElapsed = false
+    @State private var bootFallbackElapsed = false
+    @State private var bootSplashVisible = true
+    @State private var bootTask: Task<Void, Never>?
+
+    private let bootMinimumDuration: UInt64 = 650_000_000
+    private let bootFallbackDuration: UInt64 = 2_400_000_000
 
     private let fallbackPoints = Self.makeSeries()
 
     private var visiblePoints: [GraphPoint] {
-        let cutoff = Date().addingTimeInterval(-selectedRange.marketTimeRange.duration)
+        let latestDate = market.points.last?.date ?? Date()
+        let cutoff = latestDate.addingTimeInterval(-selectedRange.marketTimeRange.duration)
         let source = market.points.filter { $0.date >= cutoff }
-        let sampled = Self.sampleLinePoints(source, limit: selectedRange.marketTimeRange.maxVisiblePoints)
-        let live = sampled.enumerated().map { index, point in
+        let live = source.enumerated().map { index, point in
             GraphPoint(index: index, date: point.date, value: point.price)
         }
-        if selectedRange == .twentyFiveMinutes {
-            return live
+
+        guard live.count > 1 else {
+            return selectedRange.slice(from: fallbackPoints)
         }
-        return live.count > 1 ? live : selectedRange.slice(from: fallbackPoints)
+
+        return live
     }
 
     var body: some View {
         let renderedPoints = visiblePoints
-        let firstValue = renderedPoints.first?.value ?? 0
-        let lastValue = renderedPoints.last?.value ?? 0
-        let absoluteChange = lastValue - firstValue
-        let percentChange = firstValue == 0 ? 0 : (absoluteChange / firstValue) * 100
-        let values = renderedPoints.map(\.value)
-        let highValue = values.max() ?? 0
-        let lowValue = values.min() ?? 0
+        let analytics = renderedPoints.count == market.points.count && market.points.count > 1
+            ? market.analytics
+            : Self.analytics(from: renderedPoints)
+        let isUp = analytics.percentChange >= 0
 
         GeometryReader { proxy in
             ZStack {
@@ -62,40 +191,79 @@ struct ContentView: View {
                     instrumentSymbol: market.selectedInstrument.compactTitle,
                     instrumentSession: market.selectedInstrument.session,
                     syncState: market.syncState,
-                    lastValue: lastValue,
-                    absoluteChange: absoluteChange,
-                    highValue: highValue,
-                    lowValue: lowValue,
-                    percentChange: percentChange,
-                    pointCount: renderedPoints.count,
+                    analytics: analytics,
+                    isUp: isUp,
                     isOldStyleFullscreen: isOldStyleFullscreen
                 )
+
+                if bootSplashVisible {
+                    BootSplashView()
+                        .transition(.opacity)
+                }
             }
             .ignoresSafeArea()
             .background(WindowChromeConfigurator(isOldStyleFullscreen: $isOldStyleFullscreen))
         }
         .onAppear {
-            market.attach(repository: environment.repository)
+            market.attach(engine: environment.marketDataEngine)
             market.setRange(selectedRange.marketTimeRange)
+            beginBootSequence()
         }
         .onChange(of: selectedRange) { _, newValue in
             market.setRange(newValue.marketTimeRange)
+        }
+        .onChange(of: market.startupState) { _, _ in
+            refreshBootSplashVisibility()
         }
         .onReceive(environment.$instrumentSelectionRequest) { request in
             guard let request else { return }
             selectedTab = .market
             market.selectInstrument(request.instrument)
         }
+        .onDisappear {
+            bootTask?.cancel()
+            bootTask = nil
+        }
     }
 
-    private static func sampleLinePoints(_ source: [LinePoint], limit: Int) -> [LinePoint] {
-        guard source.count > limit, limit > 2 else { return source }
+    private func beginBootSequence() {
+        bootTask?.cancel()
+        bootMinimumElapsed = false
+        bootFallbackElapsed = false
+        bootSplashVisible = true
 
-        let step = Double(source.count - 1) / Double(limit - 1)
-        return (0..<limit).map { index in
-            let sourceIndex = min(max(Int((Double(index) * step).rounded()), 0), source.count - 1)
-            return source[sourceIndex]
+        bootTask = Task {
+            try? await Task.sleep(nanoseconds: bootMinimumDuration)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                bootMinimumElapsed = true
+                refreshBootSplashVisibility()
+            }
+
+            try? await Task.sleep(nanoseconds: bootFallbackDuration - bootMinimumDuration)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                bootFallbackElapsed = true
+                refreshBootSplashVisibility()
+            }
         }
+    }
+
+    private func refreshBootSplashVisibility() {
+        guard bootSplashVisible else { return }
+        guard bootMinimumElapsed else { return }
+        guard bootFallbackElapsed || market.startupState != .loading else { return }
+
+        withAnimation(.easeOut(duration: 0.45)) {
+            bootSplashVisible = false
+        }
+    }
+
+    private static func analytics(from points: [GraphPoint]) -> MarketSeriesAnalytics {
+        MarketSeriesCPU.analytics(
+            timestamps: points.map { Int64($0.date.timeIntervalSince1970) },
+            prices: points.map(\.value)
+        )
     }
 
     private static func makeSeries(count: Int = 320) -> [GraphPoint] {
@@ -129,15 +297,10 @@ private struct AeviumWorkspace: View {
     let instrumentSymbol: String
     let instrumentSession: String
     let syncState: SyncState
-    let lastValue: Double
-    let absoluteChange: Double
-    let highValue: Double
-    let lowValue: Double
-    let percentChange: Double
-    let pointCount: Int
+    let analytics: MarketSeriesAnalytics
+    let isUp: Bool
     let isOldStyleFullscreen: Bool
 
-    private var isUp: Bool { percentChange >= 0 }
     private let inspectorMaxWidth: CGFloat = 304
     private var inspectorWidth: CGFloat { inspectorMaxWidth * inspectorReveal }
     private var inspectorDividerOpacity: Double { Double(inspectorReveal) }
@@ -164,6 +327,7 @@ private struct AeviumWorkspace: View {
                         HStack(spacing: 0) {
                             ChartStage(
                                 points: points,
+                                analytics: analytics,
                                 selectedRange: $selectedRange,
                                 isUp: isUp,
                                 drawerReveal: inspectorReveal
@@ -177,15 +341,10 @@ private struct AeviumWorkspace: View {
                             ZStack(alignment: .trailing) {
                                 MarketInspector(
                                     points: points,
+                                    analytics: analytics,
                                     instrumentSymbol: instrumentSymbol,
                                     instrumentSession: instrumentSession,
                                     selectedRange: selectedRange,
-                                    lastValue: lastValue,
-                                    absoluteChange: absoluteChange,
-                                    highValue: highValue,
-                                    lowValue: lowValue,
-                                    percentChange: percentChange,
-                                    pointCount: pointCount,
                                     isUp: isUp
                                 )
                                 .frame(width: inspectorMaxWidth, alignment: .trailing)
@@ -555,14 +714,33 @@ private struct FullscreenWindowControls: View {
 
 private struct ChartStage: View {
     let points: [GraphPoint]
+    let analytics: MarketSeriesAnalytics
     @Binding var selectedRange: ChartRange
     let isUp: Bool
     let drawerReveal: CGFloat
+    @State private var displayedXDomain: ClosedRange<Date>?
+    @State private var displayedYAxis: YAxisConfiguration?
+    @State private var lastCameraRange: ChartRange?
 
-    private struct YAxisConfiguration {
+    private struct YAxisConfiguration: Equatable {
         let domain: ClosedRange<Double>
         let ticks: [Double]
         let step: Double
+    }
+
+    private struct CameraInput: Equatable {
+        let range: ChartRange
+        let count: Int
+        let firstID: TimeInterval?
+        let lastID: TimeInterval?
+        let lowValue: Double
+        let highValue: Double
+        let lastValue: Double
+    }
+
+    private struct ChartSegment: Identifiable {
+        let id: Int
+        let points: [GraphPoint]
     }
 
     private static let dayPrefixFormatter: DateFormatter = {
@@ -580,9 +758,26 @@ private struct ChartStage: View {
     }()
 
     private var yAxisConfiguration: YAxisConfiguration {
-        let values = points.map(\.value)
-        let minValue = values.min() ?? 0
-        let maxValue = values.max() ?? 1
+        makeYAxisConfiguration(lowValue: analytics.lowValue, highValue: analytics.highValue)
+    }
+
+    private var cameraInput: CameraInput {
+        CameraInput(
+            range: selectedRange,
+            count: points.count,
+            firstID: points.first?.id,
+            lastID: points.last?.id,
+            lowValue: analytics.lowValue,
+            highValue: analytics.highValue,
+            lastValue: analytics.lastValue
+        )
+    }
+
+    private func makeYAxisConfiguration(lowValue: Double, highValue: Double) -> YAxisConfiguration {
+        let safeLow = lowValue.isFinite && lowValue > 0 ? lowValue : 0
+        let safeHigh = highValue.isFinite && highValue > 0 ? highValue : safeLow + 1
+        let minValue = safeLow
+        let maxValue = safeHigh == safeLow ? safeLow + 1 : safeHigh
         let span = max(maxValue - minValue, max(abs(maxValue), 1) * 0.001)
         let rawStep = span / 5
         let step = niceStep(for: rawStep)
@@ -603,41 +798,47 @@ private struct ChartStage: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let yAxis = yAxisConfiguration
-            let ticks = adaptiveXAxisTicks(plotWidth: proxy.size.width)
+            let xDomain = displayedXDomain ?? targetXDomain() ?? fallbackXDomain()
+            let yAxis = displayedYAxis ?? yAxisConfiguration
+            let ticks = adaptiveXAxisTicks(plotWidth: proxy.size.width, domain: xDomain)
             let labels = makeXAxisLabels(from: ticks)
+            let segments = chartSegments()
 
             ZStack(alignment: .topTrailing) {
                 Chart {
-                    ForEach(points) { point in
-                        AreaMark(
-                            x: .value("Time", point.date),
-                            yStart: .value("Base", yAxis.domain.lowerBound),
-                            yEnd: .value("Price", point.value)
-                        )
-                        .interpolationMethod(selectedRange == .twentyFiveMinutes ? .linear : .catmullRom)
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [
-                                    Color(red: 0.50, green: 0.72, blue: 0.70).opacity(0.20),
-                                    Color(red: 0.25, green: 0.33, blue: 0.36).opacity(0.06)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
+                    ForEach(segments) { segment in
+                        ForEach(segment.points) { point in
+                            AreaMark(
+                                x: .value("Time", point.date),
+                                yStart: .value("Base", yAxis.domain.lowerBound),
+                                yEnd: .value("Price", point.value),
+                                series: .value("Segment", segment.id)
                             )
-                        )
+                            .interpolationMethod(.linear)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.50, green: 0.72, blue: 0.70).opacity(0.20),
+                                        Color(red: 0.25, green: 0.33, blue: 0.36).opacity(0.06)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
 
-                        LineMark(
-                            x: .value("Time", point.date),
-                            y: .value("Price", point.value)
-                        )
-                        .interpolationMethod(selectedRange == .twentyFiveMinutes ? .linear : .catmullRom)
-                        .lineStyle(.init(lineWidth: 2.05, lineCap: .round, lineJoin: .round))
-                        .foregroundStyle(
-                            isUp
-                                ? Color(red: 0.60, green: 0.86, blue: 0.75)
-                                : Color(red: 0.86, green: 0.68, blue: 0.68)
-                        )
+                            LineMark(
+                                x: .value("Time", point.date),
+                                y: .value("Price", point.value),
+                                series: .value("Segment", segment.id)
+                            )
+                            .interpolationMethod(.linear)
+                            .lineStyle(.init(lineWidth: 2.05, lineCap: .round, lineJoin: .round))
+                            .foregroundStyle(
+                                isUp
+                                    ? Color(red: 0.60, green: 0.86, blue: 0.75)
+                                    : Color(red: 0.86, green: 0.68, blue: 0.68)
+                            )
+                        }
                     }
 
                     if let last = points.last {
@@ -654,6 +855,7 @@ private struct ChartStage: View {
                     }
                 }
                 .chartLegend(.hidden)
+                .chartXScale(domain: xDomain)
                 .chartYScale(domain: yAxis.domain)
                 .chartYAxis {
                     AxisMarks(position: .leading, values: yAxis.ticks) { value in
@@ -715,15 +917,112 @@ private struct ChartStage: View {
                 endPoint: .bottomTrailing
             )
         )
+        .onAppear {
+            refreshChartCamera(animated: false)
+        }
+        .onChange(of: cameraInput) { _, _ in
+            refreshChartCamera(animated: true)
+        }
     }
 
-    private func adaptiveXAxisTicks(plotWidth: CGFloat) -> [Date] {
-        guard let first = points.first?.date, let last = points.last?.date else {
-            return []
+    private func refreshChartCamera(animated: Bool) {
+        guard let targetXDomain = targetXDomain() else {
+            displayedXDomain = nil
+            displayedYAxis = yAxisConfiguration
+            lastCameraRange = selectedRange
+            return
         }
-        guard first < last else {
-            return [first]
+
+        let isRangeReset = lastCameraRange != selectedRange
+        let isLargeJump = shouldResetCamera(to: targetXDomain)
+        let targetYAxis = smoothedYAxisConfiguration(reset: isRangeReset || isLargeJump)
+
+        let applyCamera = {
+            displayedXDomain = targetXDomain
+            displayedYAxis = targetYAxis
+            lastCameraRange = selectedRange
         }
+
+        if animated, !isRangeReset, !isLargeJump {
+            withAnimation(.linear(duration: scrollAnimationDuration(to: targetXDomain))) {
+                applyCamera()
+            }
+        } else {
+            var transaction = Transaction()
+            transaction.animation = nil
+            withTransaction(transaction) {
+                applyCamera()
+            }
+        }
+    }
+
+    private func targetXDomain() -> ClosedRange<Date>? {
+        guard let latestDate = points.last?.date else { return nil }
+        let lowerBound = latestDate.addingTimeInterval(-selectedRange.marketTimeRange.duration)
+        return lowerBound...latestDate
+    }
+
+    private func fallbackXDomain() -> ClosedRange<Date> {
+        let upperBound = Date()
+        return upperBound.addingTimeInterval(-selectedRange.marketTimeRange.duration)...upperBound
+    }
+
+    private func shouldResetCamera(to target: ClosedRange<Date>) -> Bool {
+        guard let displayedXDomain else { return true }
+
+        let shift = abs(target.upperBound.timeIntervalSince(displayedXDomain.upperBound))
+        let resetThreshold = max(
+            selectedRange.marketTimeRange.duration * 0.08,
+            medianPointCadence * 6
+        )
+        return shift > resetThreshold
+    }
+
+    private func scrollAnimationDuration(to target: ClosedRange<Date>) -> TimeInterval {
+        guard let displayedXDomain else { return 0.28 }
+
+        let shift = abs(target.upperBound.timeIntervalSince(displayedXDomain.upperBound))
+        let cadence = max(medianPointCadence, 1)
+        let normalized = min(max(shift / cadence, 0.65), 1.6)
+        return 0.26 * normalized
+    }
+
+    private func smoothedYAxisConfiguration(reset: Bool) -> YAxisConfiguration {
+        let target = yAxisConfiguration
+        guard !reset, let current = displayedYAxis else {
+            return target
+        }
+
+        let targetDomain = target.domain
+        let currentDomain = current.domain
+        let currentSpan = currentDomain.upperBound - currentDomain.lowerBound
+        let targetSpan = max(targetDomain.upperBound - targetDomain.lowerBound, 0.0001)
+        let targetFitsCurrent = targetDomain.lowerBound >= currentDomain.lowerBound
+            && targetDomain.upperBound <= currentDomain.upperBound
+
+        if targetFitsCurrent, currentSpan <= targetSpan * 1.8 {
+            return current
+        }
+
+        return target
+    }
+
+    private var medianPointCadence: TimeInterval {
+        let gaps = zip(points.dropFirst(), points)
+            .map { current, previous in current.date.timeIntervalSince(previous.date) }
+            .filter { $0.isFinite && $0 > 0 }
+
+        guard !gaps.isEmpty else {
+            return max(selectedRange.marketTimeRange.duration / Double(max(points.count, 2)), 1)
+        }
+
+        let sorted = gaps.sorted()
+        return sorted[sorted.count / 2]
+    }
+
+    private func adaptiveXAxisTicks(plotWidth: CGFloat, domain: ClosedRange<Date>) -> [Date] {
+        let first = domain.lowerBound
+        let last = domain.upperBound
 
         let availableWidth = max(plotWidth - 70, 320)
         let maxTickCount = max(3, min(10, Int(availableWidth / 95)))
@@ -761,6 +1060,56 @@ private struct ChartStage: View {
         }
 
         return tickDates
+    }
+
+    private func chartSegments() -> [ChartSegment] {
+        let ordered = points.sorted { $0.date < $1.date }
+        guard !ordered.isEmpty else { return [] }
+
+        var deduped: [GraphPoint] = []
+        deduped.reserveCapacity(ordered.count)
+
+        for point in ordered {
+            if let last = deduped.last, last.date == point.date {
+                deduped[deduped.count - 1] = point
+            } else {
+                deduped.append(point)
+            }
+        }
+
+        return deduped.count > 1 ? [ChartSegment(id: 0, points: deduped)] : []
+    }
+
+    private var adaptiveMaximumRenderableGap: TimeInterval {
+        let gaps = zip(points.dropFirst(), points)
+            .map { current, previous in current.date.timeIntervalSince(previous.date) }
+            .filter { $0.isFinite && $0 > 0 }
+
+        guard !gaps.isEmpty else { return maximumRenderableGap }
+
+        let sorted = gaps.sorted()
+        let medianGap = sorted[sorted.count / 2]
+        let cadenceAwareLimit = max(maximumRenderableGap, medianGap * 2.75)
+        return min(cadenceAwareLimit, selectedRange.marketTimeRange.duration / 3)
+    }
+
+    private var maximumRenderableGap: TimeInterval {
+        switch selectedRange {
+        case .twentyFiveMinutes:
+            return 90
+        case .hour:
+            return 6 * 60
+        case .day:
+            return 2 * 60 * 60
+        case .week:
+            return 90 * 60
+        case .month:
+            return 8 * 60 * 60
+        case .quarter:
+            return 36 * 60 * 60
+        case .year:
+            return 7 * 24 * 60 * 60
+        }
     }
 
     private func makeXAxisLabels(from ticks: [Date]) -> [Date: String] {
@@ -1026,15 +1375,10 @@ private struct AeviumRangeSelector: View {
 
 private struct MarketInspector: View {
     let points: [GraphPoint]
+    let analytics: MarketSeriesAnalytics
     let instrumentSymbol: String
     let instrumentSession: String
     let selectedRange: ChartRange
-    let lastValue: Double
-    let absoluteChange: Double
-    let highValue: Double
-    let lowValue: Double
-    let percentChange: Double
-    let pointCount: Int
     let isUp: Bool
 
     private var displaySymbol: String {
@@ -1045,146 +1389,91 @@ private struct MarketInspector: View {
         instrumentSession
     }
 
+    private var lastValue: Double { analytics.lastValue }
+    private var absoluteChange: Double { analytics.absoluteChange }
+    private var highValue: Double { analytics.highValue }
+    private var lowValue: Double { analytics.lowValue }
+    private var percentChange: Double { analytics.percentChange }
+    private var pointCount: Int { analytics.pointCount }
+
     private var sampleCadenceMinutes: Double {
-        guard points.count > 1 else { return 0 }
-        let first = points.first?.date ?? Date()
-        let last = points.last?.date ?? Date()
-        let spanMinutes = last.timeIntervalSince(first) / 60
-        return spanMinutes / Double(max(points.count - 1, 1))
+        analytics.sampleCadenceMinutes
     }
 
     private var windowHours: Double {
-        guard let first = points.first?.date, let last = points.last?.date else { return 0 }
-        return last.timeIntervalSince(first) / 3600
-    }
-
-    private var returns: [Double] {
-        guard points.count > 1 else { return [] }
-        return zip(points.dropFirst(), points).map { newPoint, oldPoint in
-            guard oldPoint.value != 0 else { return 0 }
-            return (newPoint.value - oldPoint.value) / oldPoint.value
-        }
+        analytics.windowHours
     }
 
     private var averageReturn: Double {
-        guard !returns.isEmpty else { return 0 }
-        return returns.reduce(0, +) / Double(returns.count)
+        analytics.averageReturn
     }
 
     private var medianReturn: Double {
-        guard !returns.isEmpty else { return 0 }
-        let sorted = returns.sorted()
-        let mid = sorted.count / 2
-        if sorted.count.isMultiple(of: 2) {
-            return (sorted[mid - 1] + sorted[mid]) / 2
-        }
-        return sorted[mid]
+        analytics.medianReturn
     }
 
     private var returnStdDev: Double {
-        guard returns.count > 1 else { return 0 }
-        let mean = averageReturn
-        let variance = returns.reduce(0) { $0 + pow($1 - mean, 2) } / Double(returns.count - 1)
-        return sqrt(variance)
+        analytics.returnStdDev
     }
 
     private var realizedVolPercent: Double {
-        return returnStdDev * sqrt(Double(max(returns.count, 1))) * 100
+        analytics.realizedVolPercent
     }
 
     private var averageCandleMovePercent: Double {
-        guard points.count > 1 else { return 0 }
-        let diffs = zip(points.dropFirst(), points).map { abs($0.value - $1.value) / max(abs($1.value), 0.0001) }
-        return (diffs.reduce(0, +) / Double(diffs.count)) * 100
+        analytics.averageCandleMovePercent
     }
 
     private var downsideDeviationPercent: Double {
-        let negatives = returns.filter { $0 < 0 }
-        guard !negatives.isEmpty else { return 0 }
-        let meanSquare = negatives.reduce(0) { $0 + pow($1, 2) } / Double(negatives.count)
-        return sqrt(meanSquare) * 100
+        analytics.downsideDeviationPercent
     }
 
     private var trendSlopePercentPerStep: Double {
-        guard points.count > 1, let first = points.first?.value else { return 0 }
-        let steps = Double(points.count - 1)
-        return ((lastValue - first) / max(abs(first), 0.0001)) / steps * 100
+        analytics.trendSlopePercentPerStep
     }
 
     private var efficiencyRatio: Double {
-        guard points.count > 1 else { return 0 }
-        let pathLength = zip(points.dropFirst(), points).reduce(0.0) { $0 + abs($1.0.value - $1.1.value) }
-        let displacement = abs((points.last?.value ?? 0) - (points.first?.value ?? 0))
-        guard pathLength > 0 else { return 0 }
-        return displacement / pathLength
+        analytics.efficiencyRatio
     }
 
     private var maxDrawdownPercent: Double {
-        guard !points.isEmpty else { return 0 }
-        var peak = points.first?.value ?? 0
-        var worst = 0.0
-        for point in points {
-            peak = max(peak, point.value)
-            guard peak != 0 else { continue }
-            let drawdown = (point.value - peak) / peak
-            worst = min(worst, drawdown)
-        }
-        return abs(worst * 100)
+        analytics.maxDrawdownPercent
     }
 
     private var recoveryPercentFromLow: Double {
-        guard lowValue != 0 else { return 0 }
-        return max(0, (lastValue - lowValue) / abs(lowValue) * 100)
+        analytics.recoveryPercentFromLow
     }
 
     private var meanPrice: Double {
-        guard !points.isEmpty else { return 0 }
-        return points.map(\.value).reduce(0, +) / Double(points.count)
+        analytics.meanPrice
     }
 
     private var medianPrice: Double {
-        guard !points.isEmpty else { return 0 }
-        let sorted = points.map(\.value).sorted()
-        let mid = sorted.count / 2
-        if sorted.count.isMultiple(of: 2) {
-            return (sorted[mid - 1] + sorted[mid]) / 2
-        }
-        return sorted[mid]
+        analytics.medianPrice
     }
 
     private var priceStdDev: Double {
-        guard points.count > 1 else { return 0 }
-        let mean = meanPrice
-        let variance = points.reduce(0) { $0 + pow($1.value - mean, 2) } / Double(points.count - 1)
-        return sqrt(variance)
+        analytics.priceStdDev
     }
 
     private var zScore: Double {
-        guard priceStdDev > 0 else { return 0 }
-        return (lastValue - meanPrice) / priceStdDev
+        analytics.zScore
     }
 
     private var vwapProxy: Double {
-        guard !points.isEmpty else { return 0 }
-        let weighted = points.enumerated().reduce(0.0) { acc, element in
-            let idx = Double(element.offset + 1)
-            return acc + (element.element.value * idx)
-        }
-        let sumWeights = Double(points.count * (points.count + 1)) / 2
-        return weighted / max(sumWeights, 1)
+        analytics.vwapProxy
     }
 
     private var percentileInRange: Double {
-        let span = max(highValue - lowValue, 0.0001)
-        return ((lastValue - lowValue) / span).clamped(to: 0...1)
+        analytics.percentileInRange
     }
 
     private var distanceToHighPercent: Double {
-        (1 - percentileInRange) * 100
+        analytics.distanceToHighPercent
     }
 
     private var distanceFromLowPercent: Double {
-        percentileInRange * 100
+        analytics.distanceFromLowPercent
     }
 
     private var vwapDriftPercent: Double {
@@ -1266,7 +1555,7 @@ private struct MarketInspector: View {
     }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
+        ScrollView(.vertical, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 12) {
                 card(tint: isUp ? Color(red: 0.16, green: 0.36, blue: 0.30) : Color(red: 0.36, green: 0.20, blue: 0.23)) {
                     HStack(alignment: .top) {
@@ -1290,6 +1579,8 @@ private struct MarketInspector: View {
                                 .font(.system(size: 35, weight: .semibold, design: .default))
                                 .monospacedDigit()
                                 .foregroundStyle(.white.opacity(0.96))
+                                .contentTransition(.numericText())
+                                .animation(.easeOut(duration: 0.18), value: lastValue)
                                 .hoverInsight(
                                     InspectorInsight(
                                         title: "Last Price",
@@ -1528,8 +1819,7 @@ private struct MarketInspector: View {
     }
 
     private var volatilityPercent: Double {
-        guard lastValue != 0 else { return 0 }
-        return ((highValue - lowValue) / abs(lastValue)) * 100
+        analytics.volatilityPercent
     }
 
     private func number(_ value: Double) -> String {

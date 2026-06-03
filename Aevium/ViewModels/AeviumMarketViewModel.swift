@@ -3,20 +3,41 @@ import SwiftUI
 
 @MainActor
 final class AeviumMarketViewModel: ObservableObject {
+    enum StartupState: Equatable {
+        case loading
+        case ready
+        case failed
+    }
+
     @Published var selectedInstrument: InstrumentMetadata
     @Published var points: [LinePoint] = []
+    @Published private(set) var analytics: MarketSeriesAnalytics = .empty
+    @Published var computeSummary: AeviumComputeSummary = .cpu
     @Published var syncState: SyncState
+    @Published private(set) var startupState: StartupState = .loading
     @Published var searchQuery = ""
     @Published var searchResults: [InstrumentMetadata] = []
     @Published var isSearching = false
     @Published var errorMessage: String?
 
-    private var repository: MarketDataRepository?
+    private var engine: MarketDataEngine?
     private var selectedRange: MarketTimeRange = .week
-    private var liveTask: Task<Void, Never>?
-    private var backfillTask: Task<Void, Never>?
+    private let seriesProcessor = MarketSeriesProcessor()
+    private var streamTask: Task<Void, Never>?
+    private var processingTask: Task<Void, Never>?
+    private var pendingSeriesUpdates: [PendingSeriesUpdate] = []
+    private var processingGeneration = 0
     private var searchTask: Task<Void, Never>?
     private var settingsObserver: NSObjectProtocol?
+
+    private struct PendingSeriesUpdate {
+        let points: [LinePoint]
+        let state: SyncState
+        let cap: Int
+        let fromTimestamp: Int64
+        let stableBucketSeconds: Int
+        let completesStartup: Bool
+    }
 
     init() {
         let initial = InstrumentMetadata(
@@ -42,20 +63,20 @@ final class AeviumMarketViewModel: ObservableObject {
     }
 
     deinit {
-        liveTask?.cancel()
-        backfillTask?.cancel()
+        streamTask?.cancel()
+        processingTask?.cancel()
         searchTask?.cancel()
         if let settingsObserver {
             NotificationCenter.default.removeObserver(settingsObserver)
         }
     }
 
-    func attach(repository: MarketDataRepository) {
-        guard self.repository == nil else { return }
-        self.repository = repository
+    func attach(engine: MarketDataEngine) {
+        guard self.engine == nil else { return }
+        self.engine = engine
 
         Task {
-            let instrument = await repository.defaultInstrument()
+            let instrument = await engine.defaultInstrument()
             await MainActor.run {
                 self.selectInstrument(instrument)
             }
@@ -65,12 +86,13 @@ final class AeviumMarketViewModel: ObservableObject {
     func setRange(_ range: MarketTimeRange) {
         guard selectedRange != range else { return }
         selectedRange = range
-        restartStreams()
+        resetSeries()
+        restartStream()
     }
 
     func reloadProviderConfiguration() {
         errorMessage = nil
-        restartStreams()
+        restartStream()
     }
 
     func updateSearchQuery(_ query: String) {
@@ -82,14 +104,15 @@ final class AeviumMarketViewModel: ObservableObject {
             return
         }
 
-        searchTask = Task {
-            guard let repository else { return }
+        searchTask = Task { [weak self] in
+            guard let self else { return }
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard !Task.isCancelled else { return }
 
             await MainActor.run { self.isSearching = true }
             do {
-                let results = try await repository.searchInstruments(query: query)
+                guard let engine = await MainActor.run(body: { self.engine }) else { return }
+                let results = try await engine.searchInstruments(query: query)
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     self.searchResults = results
@@ -107,7 +130,7 @@ final class AeviumMarketViewModel: ObservableObject {
 
     func commitSearch() {
         let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let repository else { return }
+        guard !trimmed.isEmpty, let engine else { return }
 
         if let first = searchResults.first {
             selectInstrument(first)
@@ -115,9 +138,15 @@ final class AeviumMarketViewModel: ObservableObject {
         }
 
         Task {
-            let inferred = await repository.resolveInstrument(query: trimmed)
-            await MainActor.run {
-                self.selectInstrument(inferred)
+            do {
+                let resolved = try await engine.resolveInstrument(query: trimmed)
+                await MainActor.run {
+                    self.selectInstrument(resolved)
+                }
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = error.localizedDescription
+                }
             }
         }
     }
@@ -128,30 +157,56 @@ final class AeviumMarketViewModel: ObservableObject {
         searchResults = []
         syncState = .idle(for: instrument.id)
         errorMessage = nil
-        points = []
-        restartStreams()
+        resetSeries()
+        restartStream()
     }
 
-    private func restartStreams() {
-        liveTask?.cancel()
-        backfillTask?.cancel()
+    private func restartStream() {
+        streamTask?.cancel()
+        processingTask?.cancel()
+        processingTask = nil
+        pendingSeriesUpdates.removeAll()
+        processingGeneration += 1
 
-        guard let repository else { return }
+        guard let engine else { return }
         let instrument = selectedInstrument
         let viewport = MarketViewport(range: selectedRange)
 
-        liveTask = Task {
+        streamTask = Task { [weak self] in
+            guard let self else { return }
+
             do {
-                for try await snapshot in await repository.subscribeLive(instrument: instrument, viewport: viewport) {
+                var receivedInitialUpdate = false
+                let stream = await engine.observeSeries(instrument: instrument, viewport: viewport)
+
+                for try await update in stream {
                     guard !Task.isCancelled else { return }
+                    let isInitialUpdate = !receivedInitialUpdate
+                    receivedInitialUpdate = true
+                    let completesStartup = isInitialUpdate
+                        && (!update.points.isEmpty
+                            || update.state.state == .connected
+                            || update.state.state == .failed
+                            || update.state.state == .rateLimited
+                            || update.errorMessage != nil)
+
                     await MainActor.run {
-                        self.syncState = snapshot.state
-                        self.merge(points: snapshot.points, cap: viewport.visiblePointTarget)
+                        self.selectedInstrument = update.instrument
+                        self.enqueueSeriesUpdate(
+                            points: update.points,
+                            state: update.state,
+                            cap: update.viewport.chartPointTarget,
+                            fromTimestamp: update.viewport.fromTimestamp,
+                            stableBucketSeconds: Self.stableBucketSeconds(for: update.viewport),
+                            completesStartup: completesStartup
+                        )
+                        self.errorMessage = update.errorMessage
                     }
                 }
             } catch {
                 await MainActor.run {
                     self.errorMessage = error.localizedDescription
+                    self.completeStartupIfNeeded(failed: true)
                     self.syncState = SyncState(
                         instrumentID: instrument.id,
                         state: .failed,
@@ -162,73 +217,96 @@ final class AeviumMarketViewModel: ObservableObject {
                 }
             }
         }
+    }
 
-        guard viewport.usesHistoricalBackfill else {
-            backfillTask = nil
-            return
+    private func enqueueSeriesUpdate(
+        points incoming: [LinePoint],
+        state: SyncState,
+        cap: Int,
+        fromTimestamp: Int64,
+        stableBucketSeconds: Int,
+        completesStartup: Bool
+    ) {
+        pendingSeriesUpdates.append(
+            PendingSeriesUpdate(
+                points: incoming,
+                state: state,
+                cap: cap,
+                fromTimestamp: fromTimestamp,
+                stableBucketSeconds: stableBucketSeconds,
+                completesStartup: completesStartup
+            )
+        )
+
+        guard processingTask == nil else { return }
+
+        let generation = processingGeneration
+        processingTask = Task { [weak self] in
+            await self?.drainSeriesUpdates(generation: generation)
+        }
+    }
+
+    private func drainSeriesUpdates(generation: Int) async {
+        defer {
+            if processingGeneration == generation {
+                processingTask = nil
+            }
         }
 
-        backfillTask = Task {
-            for await event in await repository.startBackfill(instrument: instrument, viewport: viewport) {
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    self.syncState = event.state
-                    self.merge(points: event.insertedPoints, cap: viewport.visiblePointTarget)
+        while !Task.isCancelled, processingGeneration == generation {
+            guard !pendingSeriesUpdates.isEmpty else { return }
+
+            let update = pendingSeriesUpdates.removeFirst()
+            if update.completesStartup {
+                completeStartupIfNeeded()
+            }
+            syncState = update.state
+
+            let visibleExisting = points.filter { $0.timestamp >= update.fromTimestamp }
+            let visibleIncoming = update.points.filter { $0.timestamp >= update.fromTimestamp }
+
+            guard !visibleIncoming.isEmpty else {
+                if visibleExisting.count != points.count {
+                    let result = await seriesProcessor.analyticsOnly(for: visibleExisting)
+                    guard !Task.isCancelled, processingGeneration == generation else { return }
+
+                    points = result.points
+                    analytics = result.analytics
+                    computeSummary = result.computeSummary
                 }
+                continue
+            }
+
+            let result = await seriesProcessor.processSnapshot(
+                points: visibleIncoming,
+                cap: update.cap,
+                stableBucketSeconds: update.stableBucketSeconds
+            )
+            guard !Task.isCancelled, processingGeneration == generation else { return }
+
+            points = result.points
+            analytics = result.analytics
+            computeSummary = result.computeSummary
+
+            if startupState == .loading && !points.isEmpty {
+                startupState = .ready
             }
         }
     }
 
-    private func merge(points incoming: [LinePoint], cap: Int) {
-        guard !incoming.isEmpty else { return }
-
-        let boundedIncoming = sampleLinePoints(incoming, limit: cap)
-        guard !points.isEmpty else {
-            points = boundedIncoming
-            return
-        }
-
-        var merged: [LinePoint] = []
-        merged.reserveCapacity(min(points.count + boundedIncoming.count, cap * 2))
-
-        var existingIndex = 0
-        var incomingIndex = 0
-
-        while existingIndex < points.count || incomingIndex < boundedIncoming.count {
-            if existingIndex >= points.count {
-                merged.append(boundedIncoming[incomingIndex])
-                incomingIndex += 1
-            } else if incomingIndex >= boundedIncoming.count {
-                merged.append(points[existingIndex])
-                existingIndex += 1
-            } else {
-                let existing = points[existingIndex]
-                let incomingPoint = boundedIncoming[incomingIndex]
-
-                if existing.timestamp == incomingPoint.timestamp {
-                    merged.append(incomingPoint)
-                    existingIndex += 1
-                    incomingIndex += 1
-                } else if existing.timestamp < incomingPoint.timestamp {
-                    merged.append(existing)
-                    existingIndex += 1
-                } else {
-                    merged.append(incomingPoint)
-                    incomingIndex += 1
-                }
-            }
-        }
-
-        points = sampleLinePoints(merged, limit: cap)
+    private func completeStartupIfNeeded(failed: Bool = false) {
+        guard startupState == .loading else { return }
+        startupState = failed ? .failed : .ready
     }
 
-    private func sampleLinePoints(_ source: [LinePoint], limit: Int) -> [LinePoint] {
-        guard source.count > limit, limit > 2 else { return source }
+    private func resetSeries() {
+        points = []
+        analytics = .empty
+        computeSummary = .cpu
+    }
 
-        let step = Double(source.count - 1) / Double(limit - 1)
-        return (0..<limit).map { index in
-            let sourceIndex = min(max(Int((Double(index) * step).rounded()), 0), source.count - 1)
-            return source[sourceIndex]
-        }
+    private static func stableBucketSeconds(for viewport: MarketViewport) -> Int {
+        let bucketCount = max(1, viewport.chartPointTarget / 4)
+        return max(1, Int(ceil(viewport.range.duration / Double(bucketCount))))
     }
 }

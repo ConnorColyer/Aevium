@@ -267,19 +267,20 @@ final class SQLiteMarketDataStore {
 
     func linePoints(for instrumentID: InstrumentID, from: Int64, limit: Int, minimumResolution: SeriesResolution? = nil) throws -> [LinePoint] {
         let minResolution = minimumResolution?.seconds ?? 0
+        let effectiveLimit = min(max(limit * 2, limit + 48), 5_000)
         let sql =
             """
             SELECT timestamp, price, volume, source, quality, resolution_seconds
             FROM (
-                SELECT timestamp, price, volume, source, quality, resolution_seconds
+                SELECT timestamp, price, volume, source, quality, resolution_seconds, 0 AS source_rank
                 FROM line_points
                 WHERE instrument_id = ? AND timestamp >= ? AND resolution_seconds >= ?
                 UNION ALL
-                SELECT bucket_start AS timestamp, price_close AS price, NULL AS volume, source, 'compacted' AS quality, resolution_seconds
+                SELECT bucket_start AS timestamp, price_close AS price, NULL AS volume, source, 'compacted' AS quality, resolution_seconds, 1 AS source_rank
                 FROM line_rollups
                 WHERE instrument_id = ? AND bucket_start >= ? AND resolution_seconds >= ?
             )
-            ORDER BY timestamp DESC
+            ORDER BY timestamp DESC, source_rank ASC, resolution_seconds ASC
             LIMIT ?;
             """
 
@@ -295,11 +296,15 @@ final class SQLiteMarketDataStore {
         sqlite3_bind_text(statement, 4, (instrumentID.rawValue as NSString).utf8String, -1, SQLITE_TRANSIENT)
         sqlite3_bind_int64(statement, 5, from)
         sqlite3_bind_int(statement, 6, Int32(minResolution))
-        sqlite3_bind_int(statement, 7, Int32(limit))
+        sqlite3_bind_int(statement, 7, Int32(effectiveLimit))
 
         var results: [LinePoint] = []
         while sqlite3_step(statement) == SQLITE_ROW {
             let timestamp = sqlite3_column_int64(statement, 0)
+            if results.last?.timestamp == timestamp {
+                continue
+            }
+
             let price = sqlite3_column_double(statement, 1)
             let volume = sqlite3_column_type(statement, 2) == SQLITE_NULL ? nil : sqlite3_column_double(statement, 2)
             let source = String(cString: sqlite3_column_text(statement, 3))
@@ -408,18 +413,34 @@ final class SQLiteMarketDataStore {
             INSERT OR REPLACE INTO line_rollups (
                 instrument_id, bucket_start, resolution_seconds, price_open, price_high, price_low, price_close, point_count, source
             )
+            WITH bucketed AS (
+                SELECT
+                    instrument_id,
+                    (timestamp / ?) * ? AS bucket_start,
+                    timestamp,
+                    price,
+                    FIRST_VALUE(price) OVER (
+                        PARTITION BY instrument_id, (timestamp / ?) * ?
+                        ORDER BY timestamp ASC
+                    ) AS price_open,
+                    FIRST_VALUE(price) OVER (
+                        PARTITION BY instrument_id, (timestamp / ?) * ?
+                        ORDER BY timestamp DESC
+                    ) AS price_close
+                FROM line_points
+                WHERE instrument_id = ? AND timestamp < ? AND resolution_seconds < ?
+            )
             SELECT
                 instrument_id,
-                (timestamp / ?) * ? AS bucket_start,
+                bucket_start,
                 ? AS resolution_seconds,
-                AVG(price) AS price_open,
+                MAX(price_open) AS price_open,
                 MAX(price) AS price_high,
                 MIN(price) AS price_low,
-                AVG(price) AS price_close,
+                MAX(price_close) AS price_close,
                 COUNT(*) AS point_count,
                 'local-rollup' AS source
-            FROM line_points
-            WHERE instrument_id = ? AND timestamp < ? AND resolution_seconds < ?
+            FROM bucketed
             GROUP BY instrument_id, bucket_start;
             """
 
@@ -427,9 +448,13 @@ final class SQLiteMarketDataStore {
             sqlite3_bind_int(statement, 1, Int32(bucketSeconds))
             sqlite3_bind_int(statement, 2, Int32(bucketSeconds))
             sqlite3_bind_int(statement, 3, Int32(bucketSeconds))
-            sqlite3_bind_text(statement, 4, (instrumentID.rawValue as NSString).utf8String, -1, SQLITE_TRANSIENT)
-            sqlite3_bind_int64(statement, 5, thirtyDaysAgo)
+            sqlite3_bind_int(statement, 4, Int32(bucketSeconds))
+            sqlite3_bind_int(statement, 5, Int32(bucketSeconds))
             sqlite3_bind_int(statement, 6, Int32(bucketSeconds))
+            sqlite3_bind_text(statement, 7, (instrumentID.rawValue as NSString).utf8String, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int64(statement, 8, thirtyDaysAgo)
+            sqlite3_bind_int(statement, 9, Int32(bucketSeconds))
+            sqlite3_bind_int(statement, 10, Int32(bucketSeconds))
         }
 
         let deleteSQL =

@@ -152,22 +152,72 @@ enum MarketTimeRange: String, Codable, CaseIterable, Sendable {
         }
     }
 
-    var maxVisiblePoints: Int {
+    var bufferPointTarget: Int {
         switch self {
-        case .twentyFiveMinutes: return 1_500
+        case .twentyFiveMinutes: return 900
         case .hour: return 360
         case .day: return 480
-        case .week: return 640
-        case .month: return 720
-        case .quarter: return 620
-        case .year: return 520
+        case .week: return 420
+        case .month: return 360
+        case .quarter: return 320
+        case .year: return 300
+        }
+    }
+
+    var chartPointTarget: Int {
+        switch self {
+        case .twentyFiveMinutes: return 600
+        case .hour: return 240
+        case .day: return 240
+        case .week: return 220
+        case .month: return 220
+        case .quarter: return 180
+        case .year: return 180
+        }
+    }
+
+    var storageFetchLimit: Int {
+        switch self {
+        case .twentyFiveMinutes:
+            return 1_800
+        case .hour:
+            return 900
+        case .day:
+            return 1_700
+        case .week:
+            return 2_600
+        case .month:
+            return 3_400
+        case .quarter:
+            return 2_800
+        case .year:
+            return 900
+        }
+    }
+
+    var historicalFetchLimit: Int {
+        min(max(bufferPointTarget * 3, chartPointTarget * 4), 3_200)
+    }
+
+    var liveEmissionInterval: TimeInterval {
+        switch self {
+        case .twentyFiveMinutes:
+            return 0
+        case .hour:
+            return 0.25
+        case .day:
+            return 0.75
+        case .week, .month:
+            return 1.0
+        case .quarter, .year:
+            return 1.5
         }
     }
 
     var usesHistoricalBackfill: Bool {
         switch self {
         case .twentyFiveMinutes:
-            return false
+            return true
         case .hour, .day, .week, .month, .quarter, .year:
             return true
         }
@@ -182,7 +232,7 @@ struct MarketViewport: Codable, Sendable, Hashable {
     init(range: MarketTimeRange, resolution: SeriesResolution? = nil, visiblePointTarget: Int? = nil) {
         self.range = range
         self.resolution = resolution ?? range.preferredResolution
-        self.visiblePointTarget = visiblePointTarget ?? range.maxVisiblePoints
+        self.visiblePointTarget = visiblePointTarget ?? range.bufferPointTarget
     }
 
     var fromTimestamp: Int64 {
@@ -192,6 +242,102 @@ struct MarketViewport: Codable, Sendable, Hashable {
     var usesHistoricalBackfill: Bool {
         range.usesHistoricalBackfill
     }
+
+    var chartPointTarget: Int {
+        range.chartPointTarget
+    }
+
+    var storageFetchLimit: Int {
+        range.storageFetchLimit
+    }
+
+    var historicalFetchLimit: Int {
+        range.historicalFetchLimit
+    }
+
+    var liveEmissionInterval: TimeInterval {
+        range.liveEmissionInterval
+    }
+}
+
+func sampleLinePointsPreservingExtrema(_ source: [LinePoint], limit: Int) -> [LinePoint] {
+    MarketSeriesCPU.sampleLinePointsPreservingExtrema(source, limit: limit)
+}
+
+func cleanedLinePointsForDisplay(_ source: [LinePoint]) -> [LinePoint] {
+    let ordered = deduplicatedLinePointsByTimestamp(source)
+        .filter { $0.price.isFinite && $0.price > 0 }
+
+    guard ordered.count > 4 else { return ordered }
+
+    let moves = zip(ordered.dropFirst(), ordered).compactMap { current, previous -> Double? in
+        guard previous.price > 0 else { return nil }
+        return abs((current.price - previous.price) / previous.price)
+    }
+    let sortedMoves = moves.sorted()
+    let medianMove = sortedMoves.isEmpty ? 0 : sortedMoves[sortedMoves.count / 2]
+    let isolatedMoveThreshold = min(max(medianMove * 12, 0.006), 0.035)
+
+    var cleaned: [LinePoint] = []
+    cleaned.reserveCapacity(ordered.count)
+    cleaned.append(ordered[0])
+
+    for index in 1..<(ordered.count - 1) {
+        let previous = ordered[index - 1]
+        let current = ordered[index]
+        let next = ordered[index + 1]
+
+        let previousDelta = relativeMove(from: previous.price, to: current.price)
+        let nextDelta = relativeMove(from: next.price, to: current.price)
+        let bridgeDelta = relativeMove(from: previous.price, to: next.price)
+        let isIsolatedSpike = previousDelta > isolatedMoveThreshold
+            && nextDelta > isolatedMoveThreshold
+            && bridgeDelta < isolatedMoveThreshold * 0.65
+
+        if !isIsolatedSpike {
+            cleaned.append(current)
+        }
+    }
+
+    cleaned.append(ordered[ordered.count - 1])
+    return cleaned
+}
+
+func deduplicatedLinePointsByTimestamp(_ source: [LinePoint]) -> [LinePoint] {
+    guard !source.isEmpty else { return [] }
+
+    let ordered = source.sorted { lhs, rhs in
+        if lhs.timestamp == rhs.timestamp {
+            return lhs.resolutionSeconds < rhs.resolutionSeconds
+        }
+        return lhs.timestamp < rhs.timestamp
+    }
+    var results: [LinePoint] = []
+    results.reserveCapacity(ordered.count)
+
+    for point in ordered {
+        if let lastIndex = results.indices.last, results[lastIndex].timestamp == point.timestamp {
+            results[lastIndex] = preferredDisplayPoint(results[lastIndex], point)
+        } else {
+            results.append(point)
+        }
+    }
+
+    return results
+}
+
+private func preferredDisplayPoint(_ lhs: LinePoint, _ rhs: LinePoint) -> LinePoint {
+    if lhs.quality == .live && rhs.quality != .live { return lhs }
+    if rhs.quality == .live && lhs.quality != .live { return rhs }
+    if lhs.resolutionSeconds != rhs.resolutionSeconds {
+        return lhs.resolutionSeconds < rhs.resolutionSeconds ? lhs : rhs
+    }
+    return rhs
+}
+
+private func relativeMove(from reference: Double, to value: Double) -> Double {
+    guard reference != 0 else { return 0 }
+    return abs((value - reference) / reference)
 }
 
 enum IngestionConnectionState: String, Codable, Sendable {

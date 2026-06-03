@@ -54,7 +54,8 @@ actor BackfillService {
                     for: instrument,
                     from: tier.from,
                     to: tier.to,
-                    resolution: tier.resolution
+                    resolution: tier.resolution,
+                    maxPoints: tier.pointLimit
                 )
 
                 try store.beginTransaction()
@@ -76,7 +77,7 @@ actor BackfillService {
                 continuation.yield(
                     BackfillEvent(
                         instrument: instrument,
-                        insertedPoints: sampleLinePoints(points, limit: viewport.visiblePointTarget),
+                        insertedPoints: points,
                         state: completedState
                     )
                 )
@@ -99,53 +100,53 @@ actor BackfillService {
 
     private func backfillTiers(for viewport: MarketViewport, now: Date) -> [BackfillTier] {
         let recentFrom = now.addingTimeInterval(-viewport.range.duration)
+        let activeBudget = max(1, Int(Double(viewport.historicalFetchLimit) * 0.72))
+        let contextBudget = max(1, viewport.historicalFetchLimit - activeBudget)
         let tiers: [BackfillTier]
 
         switch viewport.range {
         case .twentyFiveMinutes:
-            tiers = []
+            tiers = [
+                BackfillTier(
+                    label: "active 25m",
+                    from: recentFrom,
+                    to: now,
+                    resolution: .oneMinute,
+                    pointLimit: min(viewport.historicalFetchLimit, max(90, viewport.chartPointTarget))
+                )
+            ]
         case .hour:
             tiers = [
-                BackfillTier(label: "active 1H", from: recentFrom, to: now, resolution: viewport.resolution)
+                BackfillTier(label: "active 1H", from: recentFrom, to: now, resolution: viewport.resolution, pointLimit: viewport.historicalFetchLimit)
             ]
         case .day:
             tiers = [
-                BackfillTier(label: "active 1D", from: recentFrom, to: now, resolution: viewport.resolution),
-                BackfillTier(label: "recent context", from: now.addingTimeInterval(-7 * 24 * 60 * 60), to: recentFrom, resolution: .fiveMinute)
+                BackfillTier(label: "active 1D", from: recentFrom, to: now, resolution: viewport.resolution, pointLimit: activeBudget),
+                BackfillTier(label: "recent context", from: now.addingTimeInterval(-3 * 24 * 60 * 60), to: recentFrom, resolution: .fifteenMinute, pointLimit: contextBudget)
             ]
         case .week:
             tiers = [
-                BackfillTier(label: "active 1W", from: recentFrom, to: now, resolution: viewport.resolution),
-                BackfillTier(label: "monthly context", from: now.addingTimeInterval(-30 * 24 * 60 * 60), to: recentFrom, resolution: .fifteenMinute)
+                BackfillTier(label: "active 1W", from: recentFrom, to: now, resolution: viewport.resolution, pointLimit: activeBudget),
+                BackfillTier(label: "monthly context", from: now.addingTimeInterval(-21 * 24 * 60 * 60), to: recentFrom, resolution: .hourly, pointLimit: contextBudget)
             ]
         case .month:
             tiers = [
-                BackfillTier(label: "active 1M", from: recentFrom, to: now, resolution: viewport.resolution),
-                BackfillTier(label: "six month context", from: now.addingTimeInterval(-180 * 24 * 60 * 60), to: recentFrom, resolution: .hourly)
+                BackfillTier(label: "active 1M", from: recentFrom, to: now, resolution: viewport.resolution, pointLimit: activeBudget),
+                BackfillTier(label: "six month context", from: now.addingTimeInterval(-120 * 24 * 60 * 60), to: recentFrom, resolution: .hourly, pointLimit: contextBudget)
             ]
         case .quarter:
             tiers = [
-                BackfillTier(label: "active 3M", from: recentFrom, to: now, resolution: viewport.resolution),
-                BackfillTier(label: "year context", from: now.addingTimeInterval(-365 * 24 * 60 * 60), to: recentFrom, resolution: .hourly)
+                BackfillTier(label: "active 3M", from: recentFrom, to: now, resolution: viewport.resolution, pointLimit: activeBudget),
+                BackfillTier(label: "year context", from: now.addingTimeInterval(-365 * 24 * 60 * 60), to: recentFrom, resolution: .daily, pointLimit: contextBudget)
             ]
         case .year:
             tiers = [
-                BackfillTier(label: "active 1Y", from: recentFrom, to: now, resolution: viewport.resolution),
-                BackfillTier(label: "three year context", from: now.addingTimeInterval(-3 * 365 * 24 * 60 * 60), to: recentFrom, resolution: .daily)
+                BackfillTier(label: "active 1Y", from: recentFrom, to: now, resolution: viewport.resolution, pointLimit: activeBudget),
+                BackfillTier(label: "three year context", from: now.addingTimeInterval(-2 * 365 * 24 * 60 * 60), to: recentFrom, resolution: .daily, pointLimit: contextBudget)
             ]
         }
 
         return tiers.filter { $0.from < $0.to }
-    }
-
-    private func sampleLinePoints(_ source: [LinePoint], limit: Int) -> [LinePoint] {
-        guard source.count > limit, limit > 2 else { return source }
-
-        let step = Double(source.count - 1) / Double(limit - 1)
-        return (0..<limit).map { index in
-            let sourceIndex = min(max(Int((Double(index) * step).rounded()), 0), source.count - 1)
-            return source[sourceIndex]
-        }
     }
 
     private func writeCheckpoint(
@@ -204,6 +205,7 @@ private struct BackfillTier {
     let from: Date
     let to: Date
     let resolution: SeriesResolution
+    let pointLimit: Int
 }
 
 private extension Double {

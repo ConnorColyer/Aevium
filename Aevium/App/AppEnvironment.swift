@@ -7,13 +7,13 @@ struct InstrumentSelectionRequest: Identifiable {
 
 @MainActor
 final class AppEnvironment: ObservableObject {
-    let repository: MarketDataRepository
+    let marketDataEngine: MarketDataEngine
     @Published var instrumentSelectionRequest: InstrumentSelectionRequest?
 
     init() {
         do {
             let dbURL = try Self.databaseURL()
-            repository = try MarketDataRepository(databaseURL: dbURL)
+            marketDataEngine = try MarketDataEngine(databaseURL: dbURL)
         } catch {
             fatalError("Failed to bootstrap data layer: \(error)")
         }
@@ -33,6 +33,6 @@ final class AppEnvironment: ObservableObject {
 
         let dir = base.appendingPathComponent("Aevium", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("market-data.sqlite")
+        return dir.appendingPathComponent("crypto-market-v2.sqlite")
     }
 }

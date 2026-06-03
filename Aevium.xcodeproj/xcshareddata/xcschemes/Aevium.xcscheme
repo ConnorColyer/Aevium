@@ -14,7 +14,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "50259BED7B0E2DB09F788091"
+               BlueprintIdentifier = "03D90A621C48A5646A20B857"
                BuildableName = "Aevium.app"
                BlueprintName = "Aevium"
                ReferencedContainer = "container:Aevium.xcodeproj">
@@ -30,13 +30,23 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "50259BED7B0E2DB09F788091"
+            BlueprintIdentifier = "03D90A621C48A5646A20B857"
             BuildableName = "Aevium.app"
             BlueprintName = "Aevium"
             ReferencedContainer = "container:Aevium.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "337472F04360C36245AE310C"
+               BuildableName = "AeviumTests.xctest"
+               BlueprintName = "AeviumTests"
+               ReferencedContainer = "container:Aevium.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
@@ -53,7 +63,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "50259BED7B0E2DB09F788091"
+            BlueprintIdentifier = "03D90A621C48A5646A20B857"
             BuildableName = "Aevium.app"
             BlueprintName = "Aevium"
             ReferencedContainer = "container:Aevium.xcodeproj">
@@ -70,7 +80,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "50259BED7B0E2DB09F788091"
+            BlueprintIdentifier = "03D90A621C48A5646A20B857"
             BuildableName = "Aevium.app"
             BlueprintName = "Aevium"
             ReferencedContainer = "container:Aevium.xcodeproj">

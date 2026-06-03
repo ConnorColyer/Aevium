@@ -40,9 +40,12 @@ actor LiveIngestionService {
             var points = try store.linePoints(
                 for: instrument.id,
                 from: viewport.fromTimestamp,
-                limit: viewport.visiblePointTarget,
+                limit: viewport.storageFetchLimit,
                 minimumResolution: viewport.resolution
             )
+            if points.count > viewport.storageFetchLimit {
+                points = Array(points.suffix(viewport.storageFetchLimit))
+            }
 
             continuation.yield(
                 MarketSeriesSnapshot(
@@ -56,8 +59,9 @@ actor LiveIngestionService {
             if points.isEmpty {
                 do {
                     let latest = try await provider.latestQuote(for: instrument)
-                    points.append(latest)
-                    try store.insertLinePoints([latest])
+                    let normalizedLatest = normalizedPoint(latest, resolutionSeconds: viewport.resolution.seconds)
+                    points.append(normalizedLatest)
+                    try store.insertLinePoints([normalizedLatest])
                 } catch {
                     // The stream still attempts live connection; latest quote is just a fast-start hint.
                 }
@@ -66,6 +70,8 @@ actor LiveIngestionService {
             var pendingWrites: [LinePoint] = []
             pendingWrites.reserveCapacity(32)
             var lastFlush = Date()
+            var lastEmission = Date.distantPast
+            var lastEmittedTimestamp = points.last?.timestamp
 
             func flushPendingWrites() throws {
                 guard !pendingWrites.isEmpty else { return }
@@ -99,42 +105,50 @@ actor LiveIngestionService {
                             viewport: viewport
                         )
                     )
+                    lastEmission = Date()
+                    lastEmittedTimestamp = points.last?.timestamp
 
-                    var lastBucket = points.last.map { $0.timestamp / Int64(max(viewport.resolution.seconds, 1)) }
+                    let resolutionSeconds = max(viewport.resolution.seconds, 1)
                     for try await rawPoint in provider.liveQuotes(for: instrument) {
                         guard !Task.isCancelled else { break }
-                        let bucket = rawPoint.timestamp / Int64(max(viewport.resolution.seconds, 1))
-                        guard bucket != lastBucket else { continue }
+                        let sampled = normalizedPoint(rawPoint, resolutionSeconds: resolutionSeconds)
 
-                        lastBucket = bucket
-                        let sampled = LinePoint(
-                            instrumentID: rawPoint.instrumentID,
-                            timestamp: rawPoint.timestamp,
-                            price: rawPoint.price,
-                            volume: rawPoint.volume,
-                            source: rawPoint.source,
-                            quality: rawPoint.quality,
-                            resolutionSeconds: viewport.resolution.seconds
-                        )
+                        if let last = points.last, last.timestamp == sampled.timestamp {
+                            points[points.count - 1] = sampled
+                        } else {
+                            points.append(sampled)
+                            if points.count > viewport.storageFetchLimit {
+                                points.removeFirst(points.count - viewport.storageFetchLimit)
+                            }
+                        }
 
-                        pendingWrites.append(sampled)
+                        if let lastPending = pendingWrites.last, lastPending.timestamp == sampled.timestamp {
+                            pendingWrites[pendingWrites.count - 1] = sampled
+                        } else {
+                            pendingWrites.append(sampled)
+                        }
+
                         if pendingWrites.count >= 24 || Date().timeIntervalSince(lastFlush) >= 2 {
                             try flushPendingWrites()
                         }
 
-                        points.append(sampled)
-                        if points.count > viewport.visiblePointTarget {
-                            points.removeFirst(points.count - viewport.visiblePointTarget)
-                        }
+                        let latestTimestamp = points.last?.timestamp
+                        let shouldEmitImmediately = latestTimestamp != lastEmittedTimestamp
+                        let emissionInterval = viewport.liveEmissionInterval
+                        let elapsed = Date().timeIntervalSince(lastEmission)
 
-                        continuation.yield(
-                            MarketSeriesSnapshot(
-                                instrument: instrument,
-                                points: points,
-                                state: syncState(instrument, .connected, progress: 1, message: "Live \(provider.id)"),
-                                viewport: viewport
+                        if shouldEmitImmediately || emissionInterval == 0 || elapsed >= emissionInterval {
+                            continuation.yield(
+                                MarketSeriesSnapshot(
+                                    instrument: instrument,
+                                    points: points,
+                                    state: syncState(instrument, .connected, progress: 1, message: "Live \(provider.id)"),
+                                    viewport: viewport
+                                )
                             )
-                        )
+                            lastEmission = Date()
+                            lastEmittedTimestamp = latestTimestamp
+                        }
                     }
 
                     try flushPendingWrites()
@@ -182,6 +196,21 @@ actor LiveIngestionService {
         } catch {
             continuation.finish(throwing: error)
         }
+    }
+
+    private func normalizedPoint(_ point: LinePoint, resolutionSeconds: Int) -> LinePoint {
+        let bucketSeconds = max(resolutionSeconds, 1)
+        let bucketTimestamp = (point.timestamp / Int64(bucketSeconds)) * Int64(bucketSeconds)
+
+        return LinePoint(
+            instrumentID: point.instrumentID,
+            timestamp: bucketTimestamp,
+            price: point.price,
+            volume: point.volume,
+            source: point.source,
+            quality: point.quality,
+            resolutionSeconds: bucketSeconds
+        )
     }
 
     private func syncState(

@@ -56,7 +56,7 @@ struct MarketOverviewTab: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(OverviewBackground())
         .onAppear {
-            model.attach(repository: environment.repository)
+            model.attach(engine: environment.marketDataEngine)
         }
     }
 
@@ -124,49 +124,24 @@ struct MarketOverviewTab: View {
 @MainActor
 private final class MarketOverviewViewModel: ObservableObject {
     @Published private(set) var movers: [MarketMover] = []
+    @Published private(set) var topGainers: [MarketMover] = []
+    @Published private(set) var topLosers: [MarketMover] = []
+    @Published private(set) var volumeLeaders: [MarketMover] = []
+    @Published private(set) var highEnergyMovers: [MarketMover] = []
+    @Published private(set) var advancers = 0
+    @Published private(set) var decliners = 0
+    @Published private(set) var breadth = 0.5
     @Published private(set) var isLoading = false
     @Published private(set) var statusMessage = "Preparing market overview"
     @Published private(set) var statusIsError = false
     @Published private(set) var lastUpdated: Date?
 
-    private var repository: MarketDataRepository?
+    private var engine: MarketDataEngine?
     private var loadTask: Task<Void, Never>?
 
-    var topGainers: [MarketMover] {
-        Array(movers.filter(\.isUp).sorted { $0.percentChange > $1.percentChange }.prefix(8))
-    }
-
-    var topLosers: [MarketMover] {
-        Array(movers.filter { !$0.isUp }.sorted { $0.percentChange < $1.percentChange }.prefix(8))
-    }
-
-    var volumeLeaders: [MarketMover] {
-        Array(movers.sorted { $0.quoteVolume > $1.quoteVolume }.prefix(8))
-    }
-
-    var highEnergyMovers: [MarketMover] {
-        Array(movers.sorted { lhs, rhs in
-            (abs(lhs.percentChange) * log10(max(lhs.quoteVolume, 10))) >
-                (abs(rhs.percentChange) * log10(max(rhs.quoteVolume, 10)))
-        }.prefix(16))
-    }
-
-    var advancers: Int {
-        movers.filter(\.isUp).count
-    }
-
-    var decliners: Int {
-        movers.filter { !$0.isUp }.count
-    }
-
-    var breadth: Double {
-        guard !movers.isEmpty else { return 0.5 }
-        return Double(advancers) / Double(movers.count)
-    }
-
-    func attach(repository: MarketDataRepository) {
-        guard self.repository == nil else { return }
-        self.repository = repository
+    func attach(engine: MarketDataEngine) {
+        guard self.engine == nil else { return }
+        self.engine = engine
         refresh()
     }
 
@@ -177,13 +152,14 @@ private final class MarketOverviewViewModel: ObservableObject {
         statusMessage = "Scanning top movers"
 
         loadTask = Task { @MainActor [weak self] in
-            guard let self, let repository = self.repository else { return }
+            guard let self, let engine = self.engine else { return }
 
             do {
-                let movers = try await repository.topMovers(limit: 120)
+                let movers = try await engine.topMovers(limit: 72)
                 guard !Task.isCancelled else { return }
 
                 self.movers = movers
+                self.rebuildSections(from: movers)
                 self.lastUpdated = Date()
                 self.statusIsError = false
                 self.statusMessage = movers.isEmpty ? "No movers returned" : "\(movers.count) active symbols"
@@ -195,6 +171,19 @@ private final class MarketOverviewViewModel: ObservableObject {
                 self.isLoading = false
             }
         }
+    }
+
+    private func rebuildSections(from movers: [MarketMover]) {
+        topGainers = Array(movers.filter(\.isUp).sorted { $0.percentChange > $1.percentChange }.prefix(8))
+        topLosers = Array(movers.filter { !$0.isUp }.sorted { $0.percentChange < $1.percentChange }.prefix(8))
+        volumeLeaders = Array(movers.sorted { $0.quoteVolume > $1.quoteVolume }.prefix(8))
+        highEnergyMovers = Array(movers.sorted { lhs, rhs in
+            (abs(lhs.percentChange) * log10(max(lhs.quoteVolume, 10))) >
+                (abs(rhs.percentChange) * log10(max(rhs.quoteVolume, 10)))
+        }.prefix(16))
+        advancers = movers.filter(\.isUp).count
+        decliners = movers.count - advancers
+        breadth = movers.isEmpty ? 0.5 : Double(advancers) / Double(movers.count)
     }
 }
 

@@ -11,7 +11,8 @@ protocol MarketDataProvider: Sendable {
         for instrument: InstrumentMetadata,
         from: Date,
         to: Date,
-        resolution: SeriesResolution
+        resolution: SeriesResolution,
+        maxPoints: Int
     ) async throws -> [LinePoint]
 }
 

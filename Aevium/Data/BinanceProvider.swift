@@ -113,16 +113,26 @@ final class BinanceProvider: @unchecked Sendable, MarketDataProvider {
         for instrument: InstrumentMetadata,
         from: Date,
         to: Date,
-        resolution: SeriesResolution
+        resolution: SeriesResolution,
+        maxPoints: Int
     ) async throws -> [LinePoint] {
         guard instrument.id.type == .crypto else { throw ProviderError.unsupportedInstrument }
+        let klineStepSeconds = binanceKlineStepSeconds(for: resolution)
+        let requestedCandles = max(
+            1,
+            Int(ceil(to.timeIntervalSince(from) / Double(klineStepSeconds))) + 4
+        )
+        let fetchLimit = min(
+            Self.maximumHistoricalCandlesPerRequest,
+            max(max(1, maxPoints), requestedCandles)
+        )
 
         var results: [LinePoint] = []
         var startMs = Int64(from.timeIntervalSince1970 * 1_000)
         let endMs = Int64(to.timeIntervalSince1970 * 1_000)
-        let stepMs = Int64(resolution.seconds * 1_000)
+        let stepMs = Int64(klineStepSeconds * 1_000)
 
-        while startMs < endMs && results.count < 20_000 {
+        while startMs < endMs && results.count < fetchLimit {
             let url = restBaseURL
                 .appendingPathComponent("/api/v3/klines")
                 .aeviumAppendingQueryItems([
@@ -130,10 +140,13 @@ final class BinanceProvider: @unchecked Sendable, MarketDataProvider {
                     URLQueryItem(name: "interval", value: resolution.binanceInterval),
                     URLQueryItem(name: "startTime", value: "\(startMs)"),
                     URLQueryItem(name: "endTime", value: "\(endMs)"),
-                    URLQueryItem(name: "limit", value: "1000")
+                    URLQueryItem(
+                        name: "limit",
+                        value: "\(min(1000, fetchLimit - results.count))"
+                    )
                 ])
 
-            let page = try await fetchKlines(url: url, instrument: instrument, resolution: resolution)
+            let page = try await fetchKlines(url: url, instrument: instrument, resolutionSeconds: klineStepSeconds)
             guard !page.isEmpty else { break }
 
             results.append(contentsOf: page)
@@ -202,7 +215,7 @@ final class BinanceProvider: @unchecked Sendable, MarketDataProvider {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
-    private func fetchKlines(url: URL, instrument: InstrumentMetadata, resolution: SeriesResolution) async throws -> [LinePoint] {
+    private func fetchKlines(url: URL, instrument: InstrumentMetadata, resolutionSeconds: Int) async throws -> [LinePoint] {
         let (data, response) = try await URLSession.shared.data(from: url)
         try validate(response: response, data: data)
 
@@ -228,8 +241,17 @@ final class BinanceProvider: @unchecked Sendable, MarketDataProvider {
                 volume: volume,
                 source: id,
                 quality: .backfill,
-                resolutionSeconds: resolution.seconds
+                resolutionSeconds: resolutionSeconds
             )
+        }
+    }
+
+    private func binanceKlineStepSeconds(for resolution: SeriesResolution) -> Int {
+        switch resolution {
+        case .tick, .realtime, .oneMinute:
+            return SeriesResolution.oneMinute.seconds
+        case .fiveMinute, .fifteenMinute, .hourly, .daily:
+            return resolution.seconds
         }
     }
 
@@ -266,6 +288,8 @@ final class BinanceProvider: @unchecked Sendable, MarketDataProvider {
     private static let excludedSymbolFragments = [
         "UPUSDT", "DOWNUSDT", "BULLUSDT", "BEARUSDT"
     ]
+
+    private static let maximumHistoricalCandlesPerRequest = 20_000
 }
 
 private struct BinanceTickerPrice: Decodable {
