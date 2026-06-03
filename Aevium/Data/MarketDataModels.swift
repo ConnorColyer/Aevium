@@ -154,49 +154,49 @@ enum MarketTimeRange: String, Codable, CaseIterable, Sendable {
 
     var bufferPointTarget: Int {
         switch self {
-        case .twentyFiveMinutes: return 900
-        case .hour: return 360
-        case .day: return 480
-        case .week: return 420
-        case .month: return 360
-        case .quarter: return 320
-        case .year: return 300
+        case .twentyFiveMinutes: return 1_500
+        case .hour: return 1_200
+        case .day: return 1_440
+        case .week: return 1_200
+        case .month: return 1_200
+        case .quarter: return 900
+        case .year: return 520
         }
     }
 
     var chartPointTarget: Int {
         switch self {
-        case .twentyFiveMinutes: return 600
-        case .hour: return 240
-        case .day: return 240
-        case .week: return 220
-        case .month: return 220
-        case .quarter: return 180
-        case .year: return 180
+        case .twentyFiveMinutes: return 900
+        case .hour: return 720
+        case .day: return 720
+        case .week: return 720
+        case .month: return 720
+        case .quarter: return 640
+        case .year: return 420
         }
     }
 
     var storageFetchLimit: Int {
         switch self {
         case .twentyFiveMinutes:
-            return 1_800
+            return 2_400
         case .hour:
-            return 900
+            return 4_200
         case .day:
-            return 1_700
+            return 2_400
         case .week:
-            return 2_600
+            return 3_000
         case .month:
-            return 3_400
+            return 3_800
         case .quarter:
-            return 2_800
+            return 3_200
         case .year:
-            return 900
+            return 1_200
         }
     }
 
     var historicalFetchLimit: Int {
-        min(max(bufferPointTarget * 3, chartPointTarget * 4), 3_200)
+        min(max(bufferPointTarget * 3, chartPointTarget * 4), 6_000)
     }
 
     var liveEmissionInterval: TimeInterval {

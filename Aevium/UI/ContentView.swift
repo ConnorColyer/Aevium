@@ -266,7 +266,7 @@ struct ContentView: View {
         )
     }
 
-    private static func makeSeries(count: Int = 320) -> [GraphPoint] {
+    private static func makeSeries(count: Int = 720) -> [GraphPoint] {
         let start = Date().addingTimeInterval(Double(-count * 3600))
 
         return (0..<count).map { i in
@@ -1538,8 +1538,8 @@ private struct MarketInspector: View {
     private var cvar95Percent: Double { returnStdDev * 2.10 * 100 }
 
     private var pulseSeries: [Double] {
-        (0..<20).map { i in
-            let t = Double(i) / 19
+        (0..<48).map { i in
+            let t = Double(i) / 47
             let wave = 0.30 * sin(t * .pi * 3.2) + 0.22 * cos(t * .pi * 5.4)
             let bias = (buyShare - 0.5) * 0.85
             return 0.5 + wave + bias
@@ -1547,8 +1547,8 @@ private struct MarketInspector: View {
     }
 
     private var depthSeries: [Double] {
-        (0..<6).map { i in
-            let t = Double(i) / 5
+        (0..<10).map { i in
+            let t = Double(i) / 9
             let wave = 0.24 * cos(t * .pi * 2.3) + 0.16 * sin(t * .pi * 4.8)
             return (0.50 + wave + (buyShare - 0.5) * 0.55).clamped(to: 0.10...0.90)
         }
@@ -2436,13 +2436,13 @@ private enum ChartRange: String, CaseIterable, Identifiable {
 
     var points: Int {
         switch self {
-        case .twentyFiveMinutes: return 180
-        case .hour: return 72
-        case .day: return 64
-        case .week: return 180
-        case .month: return 240
-        case .quarter: return 290
-        case .year: return 320
+        case .twentyFiveMinutes: return 260
+        case .hour: return 220
+        case .day: return 260
+        case .week: return 360
+        case .month: return 440
+        case .quarter: return 560
+        case .year: return 720
         }
     }
 
