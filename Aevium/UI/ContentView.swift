@@ -20,6 +20,25 @@ private enum WorkspaceTab {
     case overview
 }
 
+private enum InspectorPanel: String, CaseIterable, Identifiable {
+    case summary = "Summary"
+    case flow = "Orders"
+    case risk = "Risk"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .summary:
+            return "gauge.with.dots.needle.67percent"
+        case .flow:
+            return "arrow.left.arrow.right"
+        case .risk:
+            return "shield.lefthalf.filled"
+        }
+    }
+}
+
 private struct BootSplashView: View {
     @State private var isAnimating = false
     @State private var pulsePhase = false
@@ -147,7 +166,10 @@ struct ContentView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var market = AeviumMarketViewModel()
     @State private var selectedRange: ChartRange = .week
-    @State private var selectedTab: WorkspaceTab = .market
+    @State private var selectedForesight: ForesightRange = .off
+    @State private var selectedIndicators: Set<ForesightIndicator> = []
+    @State private var chartSmoothness: Double = 0
+    @State private var selectedTab: WorkspaceTab = .overview
     @State private var isOldStyleFullscreen = false
     @State private var bootMinimumElapsed = false
     @State private var bootFallbackElapsed = false
@@ -169,11 +191,11 @@ struct ContentView: View {
         let cutoff = latestDate.addingTimeInterval(-range.marketTimeRange.duration)
         let source = market.points.filter { $0.date >= cutoff }
         let live = source.enumerated().map { index, point in
-            GraphPoint(index: index, date: point.date, value: point.price)
+            GraphPoint(index: index, date: point.date, value: point.price, volume: point.volume)
         }
 
         guard live.count > 1 else {
-            return range.slice(from: fallbackPoints)
+            return market.startupState == .loading ? range.slice(from: fallbackPoints) : []
         }
 
         return live
@@ -196,6 +218,9 @@ struct ContentView: View {
                     watchlist: environment.watchlist,
                     selectedTab: $selectedTab,
                     selectedRange: $selectedRange,
+                    selectedForesight: $selectedForesight,
+                    selectedIndicators: $selectedIndicators,
+                    chartSmoothness: $chartSmoothness,
                     displayedRange: displayedRange,
                     instrumentSymbol: market.selectedInstrument.compactTitle,
                     instrumentSession: market.selectedInstrument.session,
@@ -289,7 +314,8 @@ struct ContentView: View {
             return GraphPoint(
                 index: i,
                 date: start.addingTimeInterval(Double(i) * 900),
-                value: 141.4 + trend + cycle + local + lateRecovery - p * 1.1
+                value: 141.4 + trend + cycle + local + lateRecovery - p * 1.1,
+                volume: nil
             )
         }
     }
@@ -298,6 +324,7 @@ struct ContentView: View {
 private struct AeviumWorkspace: View {
     @State private var inspectorTargetOpen = true
     @State private var inspectorReveal: CGFloat = 1.0
+    @State private var selectedInspectorPanel: InspectorPanel = .summary
     @State private var isSettingsPresented = false
 
     @ObservedObject var market: AeviumMarketViewModel
@@ -305,6 +332,9 @@ private struct AeviumWorkspace: View {
     @ObservedObject var watchlist: InstrumentWatchlistStore
     @Binding var selectedTab: WorkspaceTab
     @Binding var selectedRange: ChartRange
+    @Binding var selectedForesight: ForesightRange
+    @Binding var selectedIndicators: Set<ForesightIndicator>
+    @Binding var chartSmoothness: Double
     let displayedRange: ChartRange
     let instrumentSymbol: String
     let instrumentSession: String
@@ -314,7 +344,7 @@ private struct AeviumWorkspace: View {
     let isRangeTransitioning: Bool
     let isOldStyleFullscreen: Bool
 
-    private let inspectorMaxWidth: CGFloat = 304
+    private let inspectorMaxWidth: CGFloat = 336
     private var inspectorWidth: CGFloat { inspectorMaxWidth * inspectorReveal }
     private var inspectorDividerOpacity: Double { Double(inspectorReveal) }
 
@@ -323,17 +353,32 @@ private struct AeviumWorkspace: View {
             AeviumRail(
                 isOldStyleFullscreen: isOldStyleFullscreen,
                 selectedTab: selectedTab,
-                onSelectMarketTab: { selectedTab = .market },
+                onSelectMarketTab: showMarket,
                 onSelectOverviewTab: { selectedTab = .overview },
                 onSettingsTapped: { isSettingsPresented = true }
             )
 
             VStack(spacing: 0) {
-                WorkspaceTopBar()
+                if selectedTab == .market {
+                    MarketCommandBar(
+                        market: market,
+                        watchlist: watchlist,
+                        selectedRange: $selectedRange,
+                        selectedForesight: $selectedForesight,
+                        selectedIndicators: $selectedIndicators,
+                        chartSmoothness: $chartSmoothness,
+                        syncState: syncState,
+                        isInspectorOpen: inspectorTargetOpen,
+                        onToggleInspector: toggleInspector
+                    )
+                    .zIndex(30)
+                }
 
-                Rectangle()
-                    .fill(Color.white.opacity(0.065))
-                    .frame(height: 1)
+                if selectedTab == .market {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.065))
+                        .frame(height: 1)
+                }
 
                 if selectedTab == .market {
                     ZStack(alignment: .topTrailing) {
@@ -342,6 +387,9 @@ private struct AeviumWorkspace: View {
                                 points: points,
                                 analytics: analytics,
                                 selectedRange: displayedRange,
+                                foresightRange: selectedForesight,
+                                selectedIndicators: selectedIndicators,
+                                chartSmoothness: chartSmoothness,
                                 isUp: isUp,
                                 drawerReveal: inspectorReveal,
                                 isRangeTransitioning: isRangeTransitioning
@@ -362,6 +410,7 @@ private struct AeviumWorkspace: View {
                                     instrumentSession: instrumentSession,
                                     selectedRange: displayedRange,
                                     isUp: isUp,
+                                    selectedPanel: $selectedInspectorPanel,
                                     onSelectWatchlistInstrument: market.selectInstrument
                                 )
                                 .frame(width: inspectorMaxWidth, alignment: .trailing)
@@ -371,26 +420,21 @@ private struct AeviumWorkspace: View {
                             .frame(width: inspectorWidth, alignment: .trailing)
                             .clipped()
                             .allowsHitTesting(inspectorReveal > 0.01)
-                        }
+	                        }
 
-                        ChartTopControls(
-                            market: market,
-                            watchlist: watchlist,
-                            selectedRange: $selectedRange,
-                            isInspectorOpen: inspectorTargetOpen,
-                            onToggleInspector: toggleInspector
-                        )
-                        .padding(.top, 10)
-                        .padding(.trailing, 20)
-                        .offset(x: -(inspectorWidth + inspectorReveal))
-
-                        SyncStatusStrip(state: syncState)
-                            .padding(.top, 13)
-                            .padding(.leading, 22)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        if points.isEmpty {
+                            MarketSeriesLoadingOverlay(
+                                symbol: instrumentSymbol,
+                                state: syncState
+                            )
+                            .padding(.trailing, inspectorWidth)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                             .allowsHitTesting(false)
+                            .transition(.opacity)
+                        }
                     }
                     .animation(Motion.standard, value: inspectorReveal)
+                    .animation(Motion.micro, value: points.isEmpty)
                 } else {
                     MarketOverviewTab()
                 }
@@ -410,6 +454,10 @@ private struct AeviumWorkspace: View {
             inspectorReveal = inspectorTargetOpen ? 1.0 : 0.0
         }
     }
+
+    private func showMarket() {
+        selectedTab = .market
+    }
 }
 
 private struct AeviumRail: View {
@@ -420,37 +468,59 @@ private struct AeviumRail: View {
     let onSettingsTapped: () -> Void
 
     var body: some View {
-        VStack(spacing: 22) {
+        VStack(spacing: 14) {
             if isOldStyleFullscreen {
                 FullscreenWindowControls()
                     .padding(.top, 14)
                     .transition(.opacity)
             }
 
-            Spacer().frame(height: isOldStyleFullscreen ? 56 : 70)
+            Spacer().frame(height: isOldStyleFullscreen ? 48 : 56)
 
-            railButton("chart.xyaxis.line", active: selectedTab == .market, help: "Market view", action: onSelectMarketTab)
-            railButton("square.grid.2x2", active: selectedTab == .overview, help: "Market overview", action: onSelectOverviewTab)
-            railButton("waveform.path.ecg", active: false)
+            railButton("square.grid.2x2", label: "Home", active: selectedTab == .overview, help: "Home", action: onSelectOverviewTab)
+            railButton("chart.xyaxis.line", label: "Market", active: selectedTab == .market, help: "Market view", action: onSelectMarketTab)
 
             Spacer()
 
-            railButton("slider.horizontal.3", active: false, help: "Settings", action: onSettingsTapped)
+            railButton("slider.horizontal.3", label: "Settings", active: false, help: "Settings", action: onSettingsTapped)
         }
-        .frame(width: 64)
-        .background(Color.black.opacity(0.12))
+        .frame(width: 74)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.22),
+                    Color.black.opacity(0.10)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        )
     }
 
-    private func railButton(_ icon: String, active: Bool, help: String? = nil, action: @escaping () -> Void = {}) -> some View {
+    private func railButton(_ icon: String, label: String, active: Bool, help: String? = nil, action: @escaping () -> Void = {}) -> some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(active ? Color(red: 0.72, green: 0.88, blue: 0.82) : .white.opacity(0.34))
-                .frame(width: 36, height: 36)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(active ? Color.white.opacity(0.075) : Color.clear)
-                )
+            VStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .semibold))
+
+                Text(label)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(active ? Color(red: 0.72, green: 0.88, blue: 0.82) : .white.opacity(0.36))
+            .frame(width: 54, height: 48)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(active ? Color.white.opacity(0.085) : Color.clear)
+            )
+            .overlay(alignment: .leading) {
+                if active {
+                    Capsule()
+                        .fill(Color(red: 0.72, green: 0.88, blue: 0.82))
+                        .frame(width: 3, height: 22)
+                        .offset(x: -7)
+                }
+            }
         }
         .buttonStyle(.plain)
         .help(help ?? icon)
@@ -458,17 +528,117 @@ private struct AeviumRail: View {
 }
 
 private struct WorkspaceTopBar: View {
+    let title: String
+    let subtitle: String
+
     var body: some View {
-        HStack {
-            Text("AEVIUM")
-                .font(.system(size: 13, weight: .semibold, design: .default))
-                .tracking(3.0)
-                .foregroundStyle(.white.opacity(0.56))
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("AEVIUM")
+                    .font(.system(size: 10, weight: .semibold, design: .default))
+                    .tracking(2.4)
+                    .foregroundStyle(.white.opacity(0.38))
+
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold, design: .default))
+                    .foregroundStyle(.white.opacity(0.82))
+            }
+
+            Text(subtitle)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.42))
+                .lineLimit(1)
+
             Spacer()
         }
         .padding(.leading, 22)
         .padding(.trailing, 22)
-        .frame(height: 40)
+        .frame(height: 58)
+        .background(Color.black.opacity(0.08))
+    }
+}
+
+private struct MarketCommandBar: View {
+    @ObservedObject var market: AeviumMarketViewModel
+    @ObservedObject var watchlist: InstrumentWatchlistStore
+    @Binding var selectedRange: ChartRange
+    @Binding var selectedForesight: ForesightRange
+    @Binding var selectedIndicators: Set<ForesightIndicator>
+    @Binding var chartSmoothness: Double
+    let syncState: SyncState
+    let isInspectorOpen: Bool
+    let onToggleInspector: () -> Void
+
+    private var isSaved: Bool {
+        watchlist.contains(market.selectedInstrument)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            brandBlock
+
+            Divider()
+                .overlay(Color.white.opacity(0.08))
+                .frame(height: 32)
+
+            InstrumentSearchControl(market: market, width: 260)
+                .layoutPriority(1)
+
+            Button {
+                watchlist.toggle(market.selectedInstrument)
+            } label: {
+                Image(systemName: isSaved ? "star.fill" : "star")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(isSaved ? Color(red: 0.92, green: 0.78, blue: 0.44) : .white.opacity(0.58))
+                    .frame(width: 34, height: 34)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(isSaved ? Color(red: 0.92, green: 0.78, blue: 0.44).opacity(0.13) : Color.white.opacity(0.055))
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(isSaved ? "Remove from watchlist" : "Add to watchlist")
+
+            AeviumRangeSelector(selectedRange: $selectedRange)
+            ForesightSelector(selectedForesight: $selectedForesight)
+            IndicatorMenuButton(selectedIndicators: $selectedIndicators)
+            ChartResolutionControl(chartSmoothness: $chartSmoothness)
+
+            Spacer(minLength: 8)
+
+            SyncStatusStrip(state: syncState)
+
+            Button(action: onToggleInspector) {
+                Image(systemName: isInspectorOpen ? "sidebar.right" : "sidebar.leading")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .frame(width: 34, height: 34)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.white.opacity(isInspectorOpen ? 0.075 : 0.045))
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(isInspectorOpen ? "Hide inspector" : "Show inspector")
+        }
+        .padding(.leading, 18)
+        .padding(.trailing, 18)
+        .frame(height: 58)
+        .background(Color.black.opacity(0.12))
+    }
+
+    private var brandBlock: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("AEVIUM")
+                .font(.system(size: 10, weight: .semibold, design: .default))
+                .tracking(2.2)
+                .foregroundStyle(.white.opacity(0.38))
+
+            Text(market.selectedInstrument.compactTitle.uppercased())
+                .font(.system(size: 13, weight: .semibold, design: .default))
+                .foregroundStyle(.white.opacity(0.76))
+        }
+        .frame(width: 128, alignment: .leading)
     }
 }
 
@@ -734,6 +904,9 @@ private struct SmoothRangeChartStage: View {
     let points: [GraphPoint]
     let analytics: MarketSeriesAnalytics
     let selectedRange: ChartRange
+    let foresightRange: ForesightRange
+    let selectedIndicators: Set<ForesightIndicator>
+    let chartSmoothness: Double
     let isUp: Bool
     let drawerReveal: CGFloat
     let isRangeTransitioning: Bool
@@ -753,6 +926,9 @@ private struct SmoothRangeChartStage: View {
             let lowValue: Double
             let highValue: Double
             let lastValue: Double
+            let foresightRange: ForesightRange
+            let selectedIndicators: Set<ForesightIndicator>
+            let chartSmoothness: Double
             let isUp: Bool
             let drawerReveal: CGFloat
         }
@@ -760,6 +936,9 @@ private struct SmoothRangeChartStage: View {
         let points: [GraphPoint]
         let analytics: MarketSeriesAnalytics
         let range: ChartRange
+        let foresightRange: ForesightRange
+        let selectedIndicators: Set<ForesightIndicator>
+        let chartSmoothness: Double
         let isUp: Bool
         let drawerReveal: CGFloat
 
@@ -772,6 +951,9 @@ private struct SmoothRangeChartStage: View {
                 lowValue: analytics.lowValue,
                 highValue: analytics.highValue,
                 lastValue: analytics.lastValue,
+                foresightRange: foresightRange,
+                selectedIndicators: selectedIndicators,
+                chartSmoothness: chartSmoothness,
                 isUp: isUp,
                 drawerReveal: drawerReveal
             )
@@ -783,6 +965,9 @@ private struct SmoothRangeChartStage: View {
             points: points,
             analytics: analytics,
             range: selectedRange,
+            foresightRange: foresightRange,
+            selectedIndicators: selectedIndicators,
+            chartSmoothness: chartSmoothness,
             isUp: isUp,
             drawerReveal: drawerReveal
         )
@@ -842,6 +1027,9 @@ private struct SmoothRangeChartStage: View {
             points: snapshot.points,
             analytics: snapshot.analytics,
             selectedRange: snapshot.range,
+            foresightRange: snapshot.foresightRange,
+            selectedIndicators: snapshot.selectedIndicators,
+            chartSmoothness: snapshot.chartSmoothness,
             isUp: snapshot.isUp,
             drawerReveal: snapshot.drawerReveal
         )
@@ -900,11 +1088,15 @@ private struct ChartStage: View {
     let points: [GraphPoint]
     let analytics: MarketSeriesAnalytics
     let selectedRange: ChartRange
+    let foresightRange: ForesightRange
+    let selectedIndicators: Set<ForesightIndicator>
+    let chartSmoothness: Double
     let isUp: Bool
     let drawerReveal: CGFloat
     @State private var displayedXDomain: ClosedRange<Date>?
     @State private var displayedYAxis: YAxisConfiguration?
     @State private var lastCameraRange: ChartRange?
+    @State private var hoverLocation: CGPoint?
 
     private struct YAxisConfiguration: Equatable {
         let domain: ClosedRange<Double>
@@ -920,11 +1112,22 @@ private struct ChartStage: View {
         let lowValue: Double
         let highValue: Double
         let lastValue: Double
+        let foresightRange: ForesightRange
+        let selectedIndicators: Set<ForesightIndicator>
+        let chartSmoothness: Double
     }
 
-    private struct ChartSegment: Identifiable {
-        let id: Int
-        let points: [GraphPoint]
+    private struct IndicatorPoint {
+        let date: Date
+        let value: Double
+    }
+
+    private struct IndicatorOverlay {
+        let id: String
+        let color: Color
+        let lineWidth: CGFloat
+        let dashed: Bool
+        let points: [IndicatorPoint]
     }
 
     private static let dayPrefixFormatter: DateFormatter = {
@@ -941,6 +1144,13 @@ private struct ChartStage: View {
         return formatter
     }()
 
+    private static let hoverFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_GB_POSIX")
+        formatter.dateFormat = "EEE d, HH:mm"
+        return formatter
+    }()
+
     private var yAxisConfiguration: YAxisConfiguration {
         makeYAxisConfiguration(lowValue: analytics.lowValue, highValue: analytics.highValue)
     }
@@ -953,7 +1163,10 @@ private struct ChartStage: View {
             lastID: points.last?.id,
             lowValue: analytics.lowValue,
             highValue: analytics.highValue,
-            lastValue: analytics.lastValue
+            lastValue: analytics.lastValue,
+            foresightRange: foresightRange,
+            selectedIndicators: selectedIndicators,
+            chartSmoothness: chartSmoothness
         )
     }
 
@@ -986,109 +1199,78 @@ private struct ChartStage: View {
             let yAxis = displayedYAxis ?? yAxisConfiguration
             let ticks = adaptiveXAxisTicks(plotWidth: proxy.size.width, domain: xDomain)
             let labels = makeXAxisLabels(from: ticks)
-            let segments = chartSegments()
+            let renderPoints = chartRenderablePoints()
+            let visualPoints = smoothedRenderablePoints(from: renderPoints)
+            let indicatorOverlays = makeIndicatorOverlays(
+                from: renderPoints,
+                futureUpperBound: xDomain.upperBound
+            )
+            let plot = plotRect(in: proxy.size)
+            let hoverPoint = nearestPoint(
+                to: hoverLocation,
+                in: plot,
+                points: renderPoints,
+                xDomain: xDomain
+            )
 
-            ZStack(alignment: .topTrailing) {
-                Chart {
-                    ForEach(segments) { segment in
-                        ForEach(segment.points) { point in
-                            AreaMark(
-                                x: .value("Time", point.date),
-                                yStart: .value("Base", yAxis.domain.lowerBound),
-                                yEnd: .value("Price", point.value),
-                                series: .value("Segment", segment.id)
-                            )
-                            .interpolationMethod(.linear)
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [
-                                        Color(red: 0.50, green: 0.72, blue: 0.70).opacity(0.20),
-                                        Color(red: 0.25, green: 0.33, blue: 0.36).opacity(0.06)
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
+            ZStack(alignment: .topLeading) {
+                futureLaneOverlay(
+                    plot: plot,
+                    xDomain: xDomain
+                )
 
-                            LineMark(
-                                x: .value("Time", point.date),
-                                y: .value("Price", point.value),
-                                series: .value("Segment", segment.id)
-                            )
-                            .interpolationMethod(.linear)
-                            .lineStyle(.init(lineWidth: 2.05, lineCap: .round, lineJoin: .round))
-                            .foregroundStyle(
-                                isUp
-                                    ? Color(red: 0.60, green: 0.86, blue: 0.75)
-                                    : Color(red: 0.86, green: 0.68, blue: 0.68)
-                            )
-                        }
-                    }
-
-                    if let last = points.last {
-                        RuleMark(y: .value("Last", last.value))
-                            .foregroundStyle(.white.opacity(0.18))
-                            .lineStyle(.init(lineWidth: 1.0, dash: [4, 8]))
-
-                        PointMark(
-                            x: .value("Time", last.date),
-                            y: .value("Price", last.value)
-                        )
-                        .symbolSize(48)
-                        .foregroundStyle(.white.opacity(0.92))
-                    }
-                }
-                .chartLegend(.hidden)
-                .chartXScale(domain: xDomain)
-                .chartYScale(domain: yAxis.domain)
-                .chartYAxis {
-                    AxisMarks(position: .leading, values: yAxis.ticks) { value in
-                        AxisGridLine(stroke: .init(lineWidth: 0.55, dash: [2, 8]))
-                            .foregroundStyle(.white.opacity(0.13))
-                        AxisValueLabel {
-                            if let y = value.as(Double.self) {
-                                Text(formatYAxisValue(y, step: yAxis.step))
-                            }
-                        }
-                        .foregroundStyle(.white.opacity(0.42))
-                        .font(.system(size: 10, weight: .regular, design: .monospaced))
-                    }
-                }
-                .chartXAxis {
-                    AxisMarks(values: ticks) { value in
-                        AxisGridLine(stroke: .init(lineWidth: 0.45))
-                            .foregroundStyle(.white.opacity(0.07))
-                        AxisValueLabel {
-                            if let date = value.as(Date.self) {
-                                Text(labels[date] ?? Self.timeFormatter.string(from: date))
-                                    .lineLimit(2)
-                                    .multilineTextAlignment(.center)
-                            }
-                        }
-                        .offset(y: 5)
-                        .foregroundStyle(.white.opacity(0.40))
-                        .font(.system(size: 9.5, weight: .regular, design: .monospaced))
-                    }
-                }
-                .padding(.top, 34)
-                .padding(.leading, 12)
-                .padding(.trailing, 10)
-                .padding(.bottom, 12)
-                .scaleEffect(x: 1.0 - (0.010 * drawerReveal), y: 1, anchor: .leading)
-                .offset(x: -3.0 * drawerReveal)
-                .overlay(alignment: .trailing) {
-                    LinearGradient(
-                        colors: [
-                            Color.clear,
-                            Color.black.opacity(0.12 * drawerReveal)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
+                Canvas { context, size in
+                    drawChart(
+                        context: &context,
+                        size: size,
+                        points: renderPoints,
+                        visualPoints: visualPoints,
+                        indicatorOverlays: indicatorOverlays,
+                        xDomain: xDomain,
+                        yAxis: yAxis,
+                        xTicks: ticks
                     )
-                    .frame(width: 24)
-                    .allowsHitTesting(false)
                 }
 
+                axisLabelOverlay(
+                    size: proxy.size,
+                    xDomain: xDomain,
+                    yAxis: yAxis,
+                    xTicks: ticks,
+                    labels: labels
+                )
+
+                if let hoverPoint {
+                    hoverOverlay(
+                        point: hoverPoint,
+                        plot: plot,
+                        xDomain: xDomain,
+                        yAxis: yAxis
+                    )
+                }
+            }
+            .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let location):
+                    hoverLocation = location
+                case .ended:
+                    hoverLocation = nil
+                }
+            }
+            .scaleEffect(x: 1.0 - (0.010 * drawerReveal), y: 1, anchor: .leading)
+            .offset(x: -3.0 * drawerReveal)
+            .overlay(alignment: .trailing) {
+                LinearGradient(
+                    colors: [
+                        Color.clear,
+                        Color.black.opacity(0.12 * drawerReveal)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 24)
+                .allowsHitTesting(false)
             }
         }
         .background(
@@ -1106,6 +1288,632 @@ private struct ChartStage: View {
         }
         .onChange(of: cameraInput) { _, _ in
             refreshChartCamera(animated: true)
+        }
+    }
+
+    private func plotRect(in size: CGSize) -> CGRect {
+        let leading: CGFloat = 66
+        let trailing: CGFloat = 24 + (drawerReveal * 8)
+        let top: CGFloat = 50
+        let bottom: CGFloat = 46
+
+        return CGRect(
+            x: leading,
+            y: top,
+            width: max(size.width - leading - trailing, 1),
+            height: max(size.height - top - bottom, 1)
+        )
+    }
+
+    private func drawChart(
+        context: inout GraphicsContext,
+        size: CGSize,
+        points: [GraphPoint],
+        visualPoints: [GraphPoint],
+        indicatorOverlays: [IndicatorOverlay],
+        xDomain: ClosedRange<Date>,
+        yAxis: YAxisConfiguration,
+        xTicks: [Date]
+    ) {
+        let plot = plotRect(in: size)
+
+        for tick in yAxis.ticks {
+            let y = yPosition(for: tick, in: plot, yDomain: yAxis.domain)
+            var path = Path()
+            path.move(to: CGPoint(x: plot.minX, y: y))
+            path.addLine(to: CGPoint(x: plot.maxX, y: y))
+            context.stroke(
+                path,
+                with: .color(.white.opacity(0.12)),
+                style: StrokeStyle(lineWidth: 0.55, dash: [2, 8])
+            )
+        }
+
+        for tick in xTicks {
+            let x = xPosition(for: tick, in: plot, xDomain: xDomain)
+            var path = Path()
+            path.move(to: CGPoint(x: x, y: plot.minY))
+            path.addLine(to: CGPoint(x: x, y: plot.maxY))
+            context.stroke(path, with: .color(.white.opacity(0.065)), lineWidth: 0.5)
+        }
+
+        var border = Path()
+        border.move(to: CGPoint(x: plot.minX, y: plot.maxY))
+        border.addLine(to: CGPoint(x: plot.maxX, y: plot.maxY))
+        context.stroke(border, with: .color(.white.opacity(0.12)), lineWidth: 0.8)
+
+        guard points.count > 1 else { return }
+
+        let mapped = visualPoints.map {
+            position(for: $0, in: plot, xDomain: xDomain, yDomain: yAxis.domain)
+        }
+
+        guard let first = mapped.first, let last = mapped.last else { return }
+
+        var area = Path()
+        area.move(to: CGPoint(x: first.x, y: plot.maxY))
+        for point in mapped {
+            area.addLine(to: point)
+        }
+        area.addLine(to: CGPoint(x: last.x, y: plot.maxY))
+        area.closeSubpath()
+        context.fill(
+            area,
+            with: .linearGradient(
+                Gradient(colors: [
+                    (isUp ? Color(red: 0.48, green: 0.76, blue: 0.66) : Color(red: 0.82, green: 0.55, blue: 0.57)).opacity(0.22),
+                    Color(red: 0.20, green: 0.28, blue: 0.30).opacity(0.04)
+                ]),
+                startPoint: CGPoint(x: plot.midX, y: plot.minY),
+                endPoint: CGPoint(x: plot.midX, y: plot.maxY)
+            )
+        )
+
+        drawIndicatorOverlays(
+            context: &context,
+            overlays: indicatorOverlays,
+            plot: plot,
+            xDomain: xDomain,
+            yDomain: yAxis.domain
+        )
+
+        var line = Path()
+        line.move(to: first)
+        for point in mapped.dropFirst() {
+            line.addLine(to: point)
+        }
+
+        let lineColor = isUp
+            ? Color(red: 0.60, green: 0.86, blue: 0.75)
+            : Color(red: 0.88, green: 0.68, blue: 0.68)
+
+        context.stroke(
+            line,
+            with: .color(lineColor),
+            style: StrokeStyle(lineWidth: 2.1, lineCap: .round, lineJoin: .round)
+        )
+
+        if let latest = points.last {
+            let latestPoint = position(for: latest, in: plot, xDomain: xDomain, yDomain: yAxis.domain)
+            var rule = Path()
+            rule.move(to: CGPoint(x: plot.minX, y: latestPoint.y))
+            rule.addLine(to: CGPoint(x: plot.maxX, y: latestPoint.y))
+            context.stroke(
+                rule,
+                with: .color(.white.opacity(0.18)),
+                style: StrokeStyle(lineWidth: 1, dash: [5, 8])
+            )
+
+            let markerRect = CGRect(x: latestPoint.x - 4, y: latestPoint.y - 4, width: 8, height: 8)
+            context.fill(Path(ellipseIn: markerRect), with: .color(.white.opacity(0.96)))
+            context.stroke(Path(ellipseIn: markerRect.insetBy(dx: -1.5, dy: -1.5)), with: .color(lineColor.opacity(0.65)), lineWidth: 1)
+        }
+    }
+
+    private func smoothedRenderablePoints(from points: [GraphPoint]) -> [GraphPoint] {
+        guard points.count > 4, chartSmoothness > 0.001 else { return points }
+
+        let count = points.count
+        let radius = max(1, Int(round(2 + (chartSmoothness * 12))))
+        let sigma = max(1.0, Double(radius) * (0.55 + (chartSmoothness * 0.15)))
+        let passes = max(1, Int(round(1 + (chartSmoothness * 3))))
+        let offsets = Array(-radius...radius)
+        let kernel: [Double] = offsets.map { offset in
+            exp(-0.5 * pow(Double(offset) / sigma, 2))
+        }
+
+        var smoothedValues = points.map(\.value)
+
+        for _ in 0..<passes {
+            var nextValues = smoothedValues
+
+            for index in 1..<(count - 1) {
+                var weightedSum = 0.0
+                var totalWeight = 0.0
+
+                for (kernelIndex, offset) in offsets.enumerated() {
+                    let sampleIndex = min(max(index + offset, 0), count - 1)
+                    let weight = kernel[kernelIndex]
+                    weightedSum += smoothedValues[sampleIndex] * weight
+                    totalWeight += weight
+                }
+
+                nextValues[index] = weightedSum / max(totalWeight, 0.0001)
+            }
+
+            smoothedValues = nextValues
+        }
+
+        return points.enumerated().map { index, point in
+            guard index > 0, index < count - 1 else { return point }
+
+            let blendedValue = point.value + ((smoothedValues[index] - point.value) * chartSmoothness)
+            return GraphPoint(
+                index: point.index,
+                date: point.date,
+                value: blendedValue,
+                volume: point.volume
+            )
+        }
+    }
+
+    private func drawIndicatorOverlays(
+        context: inout GraphicsContext,
+        overlays: [IndicatorOverlay],
+        plot: CGRect,
+        xDomain: ClosedRange<Date>,
+        yDomain: ClosedRange<Double>
+    ) {
+        for overlay in overlays {
+            guard overlay.points.count > 1 else { continue }
+
+            var path = Path()
+            let mapped = overlay.points.map {
+                position(for: GraphPoint(index: 0, date: $0.date, value: $0.value, volume: nil), in: plot, xDomain: xDomain, yDomain: yDomain)
+            }
+
+            guard let first = mapped.first else { continue }
+            path.move(to: first)
+            for point in mapped.dropFirst() {
+                path.addLine(to: point)
+            }
+
+            context.stroke(
+                path,
+                with: .color(overlay.color),
+                style: StrokeStyle(
+                    lineWidth: overlay.lineWidth,
+                    lineCap: .round,
+                    lineJoin: .round,
+                    dash: overlay.dashed ? [6, 5] : []
+                )
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func futureLaneOverlay(
+        plot: CGRect,
+        xDomain: ClosedRange<Date>
+    ) -> some View {
+        if foresightRange != .off, let latestDate = points.last?.date {
+            let latestX = xPosition(for: latestDate, in: plot, xDomain: xDomain)
+            let laneWidth = max(plot.maxX - latestX, 0)
+
+            if laneWidth > 0.5 {
+                ZStack(alignment: .leading) {
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.24, green: 0.34, blue: 0.40).opacity(0.13),
+                                    Color(red: 0.16, green: 0.21, blue: 0.25).opacity(0.19)
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+
+                    Rectangle()
+                        .fill(Color.white.opacity(0.11))
+                        .frame(width: 1)
+                }
+                .frame(width: laneWidth, height: plot.height)
+                .position(
+                    x: latestX + laneWidth / 2,
+                    y: plot.midY
+                )
+                .allowsHitTesting(false)
+            }
+        }
+    }
+
+    private func makeIndicatorOverlays(
+        from points: [GraphPoint],
+        futureUpperBound: Date
+    ) -> [IndicatorOverlay] {
+        guard points.count > 2, !selectedIndicators.isEmpty else { return [] }
+
+        var overlays: [IndicatorOverlay] = []
+
+        for indicator in ForesightIndicator.menuCases where selectedIndicators.contains(indicator) {
+            switch indicator {
+            case .sma20:
+                let series = smaSeries(period: 20, points: points)
+                overlays.append(contentsOf: overlaysForSeries(series, indicator: indicator, futureUpperBound: futureUpperBound))
+            case .sma50:
+                let series = smaSeries(period: 50, points: points)
+                overlays.append(contentsOf: overlaysForSeries(series, indicator: indicator, futureUpperBound: futureUpperBound))
+            case .ema20:
+                let series = emaSeries(period: 20, points: points)
+                overlays.append(contentsOf: overlaysForSeries(series, indicator: indicator, futureUpperBound: futureUpperBound))
+            case .ema50:
+                let series = emaSeries(period: 50, points: points)
+                overlays.append(contentsOf: overlaysForSeries(series, indicator: indicator, futureUpperBound: futureUpperBound))
+            case .vwap:
+                let series = vwapSeries(points: points)
+                overlays.append(contentsOf: overlaysForSeries(series, indicator: indicator, futureUpperBound: futureUpperBound))
+            case .bollingerBands:
+                let bands = bollingerBands(period: 20, points: points)
+                overlays.append(contentsOf: overlaysForSeries(bands.mid, indicator: .bollingerMid, futureUpperBound: futureUpperBound))
+                overlays.append(contentsOf: overlaysForSeries(bands.upper, indicator: .bollingerUpper, futureUpperBound: futureUpperBound))
+                overlays.append(contentsOf: overlaysForSeries(bands.lower, indicator: .bollingerLower, futureUpperBound: futureUpperBound))
+            case .donchianChannel:
+                let channel = donchianChannel(period: 20, points: points)
+                overlays.append(contentsOf: overlaysForSeries(channel.upper, indicator: .donchianUpper, futureUpperBound: futureUpperBound))
+                overlays.append(contentsOf: overlaysForSeries(channel.lower, indicator: .donchianLower, futureUpperBound: futureUpperBound))
+            case .keltnerChannel:
+                let channel = keltnerChannel(period: 20, multiplier: 1.5, points: points)
+                overlays.append(contentsOf: overlaysForSeries(channel.mid, indicator: .keltnerMid, futureUpperBound: futureUpperBound))
+                overlays.append(contentsOf: overlaysForSeries(channel.upper, indicator: .keltnerUpper, futureUpperBound: futureUpperBound))
+                overlays.append(contentsOf: overlaysForSeries(channel.lower, indicator: .keltnerLower, futureUpperBound: futureUpperBound))
+            case .bollingerMid, .bollingerUpper, .bollingerLower, .donchianUpper, .donchianLower, .keltnerMid, .keltnerUpper, .keltnerLower:
+                continue
+            }
+        }
+
+        return overlays
+    }
+
+    private func overlaysForSeries(
+        _ series: [IndicatorPoint],
+        indicator: ForesightIndicator,
+        futureUpperBound: Date
+    ) -> [IndicatorOverlay] {
+        guard series.count > 1 else { return [] }
+
+        var overlays = [
+            IndicatorOverlay(
+                id: "\(indicator.id)-live",
+                color: indicator.color,
+                lineWidth: indicator.lineWidth,
+                dashed: false,
+                points: series
+            )
+        ]
+
+        if foresightRange != .off,
+           let last = series.last,
+           futureUpperBound > last.date {
+            overlays.append(
+                IndicatorOverlay(
+                    id: "\(indicator.id)-future",
+                    color: indicator.color.opacity(0.78),
+                    lineWidth: indicator.lineWidth,
+                    dashed: true,
+                    points: [
+                        last,
+                        IndicatorPoint(date: futureUpperBound, value: last.value)
+                    ]
+                )
+            )
+        }
+
+        return overlays
+    }
+
+    private func emaSeries(period: Int, points: [GraphPoint]) -> [IndicatorPoint] {
+        guard points.count >= period else { return [] }
+
+        let multiplier = 2.0 / Double(period + 1)
+        let seed = points.prefix(period).map(\.value).reduce(0, +) / Double(period)
+        var currentEMA = seed
+        var result: [IndicatorPoint] = [
+            IndicatorPoint(date: points[period - 1].date, value: currentEMA)
+        ]
+
+        for point in points.dropFirst(period) {
+            currentEMA = ((point.value - currentEMA) * multiplier) + currentEMA
+            result.append(IndicatorPoint(date: point.date, value: currentEMA))
+        }
+
+        return result
+    }
+
+    private func smaSeries(period: Int, points: [GraphPoint]) -> [IndicatorPoint] {
+        guard points.count >= period else { return [] }
+
+        var rollingSum = points.prefix(period).map(\.value).reduce(0, +)
+        var result: [IndicatorPoint] = [
+            IndicatorPoint(date: points[period - 1].date, value: rollingSum / Double(period))
+        ]
+
+        for index in period..<points.count {
+            rollingSum += points[index].value
+            rollingSum -= points[index - period].value
+            result.append(
+                IndicatorPoint(
+                    date: points[index].date,
+                    value: rollingSum / Double(period)
+                )
+            )
+        }
+
+        return result
+    }
+
+    private func vwapSeries(points: [GraphPoint]) -> [IndicatorPoint] {
+        guard !points.isEmpty else { return [] }
+
+        var weightedValue = 0.0
+        var totalWeight = 0.0
+        var fallbackSum = 0.0
+        var result: [IndicatorPoint] = []
+        result.reserveCapacity(points.count)
+
+        for (index, point) in points.enumerated() {
+            let volumeWeight = max(point.volume ?? 0, 0)
+            if volumeWeight > 0 {
+                weightedValue += point.value * volumeWeight
+                totalWeight += volumeWeight
+            } else {
+                fallbackSum += point.value
+            }
+
+            let value: Double
+            if totalWeight > 0 {
+                value = weightedValue / totalWeight
+            } else {
+                value = fallbackSum / Double(index + 1)
+            }
+
+            result.append(IndicatorPoint(date: point.date, value: value))
+        }
+
+        return result
+    }
+
+    private func bollingerBands(
+        period: Int,
+        points: [GraphPoint]
+    ) -> (mid: [IndicatorPoint], upper: [IndicatorPoint], lower: [IndicatorPoint]) {
+        guard points.count >= period else { return ([], [], []) }
+
+        var mid: [IndicatorPoint] = []
+        var upper: [IndicatorPoint] = []
+        var lower: [IndicatorPoint] = []
+        mid.reserveCapacity(points.count - period + 1)
+        upper.reserveCapacity(points.count - period + 1)
+        lower.reserveCapacity(points.count - period + 1)
+
+        for index in (period - 1)..<points.count {
+            let window = points[(index - period + 1)...index].map(\.value)
+            let mean = window.reduce(0, +) / Double(period)
+            let variance = window.reduce(0) { partial, value in
+                partial + pow(value - mean, 2)
+            } / Double(period)
+            let stdDev = sqrt(variance)
+            let date = points[index].date
+
+            mid.append(IndicatorPoint(date: date, value: mean))
+            upper.append(IndicatorPoint(date: date, value: mean + (stdDev * 2)))
+            lower.append(IndicatorPoint(date: date, value: mean - (stdDev * 2)))
+        }
+
+        return (mid, upper, lower)
+    }
+
+    private func donchianChannel(
+        period: Int,
+        points: [GraphPoint]
+    ) -> (upper: [IndicatorPoint], lower: [IndicatorPoint]) {
+        guard points.count >= period else { return ([], []) }
+
+        var upper: [IndicatorPoint] = []
+        var lower: [IndicatorPoint] = []
+        upper.reserveCapacity(points.count - period + 1)
+        lower.reserveCapacity(points.count - period + 1)
+
+        for index in (period - 1)..<points.count {
+            let window = points[(index - period + 1)...index].map(\.value)
+            let date = points[index].date
+            upper.append(IndicatorPoint(date: date, value: window.max() ?? points[index].value))
+            lower.append(IndicatorPoint(date: date, value: window.min() ?? points[index].value))
+        }
+
+        return (upper, lower)
+    }
+
+    private func keltnerChannel(
+        period: Int,
+        multiplier: Double,
+        points: [GraphPoint]
+    ) -> (mid: [IndicatorPoint], upper: [IndicatorPoint], lower: [IndicatorPoint]) {
+        guard points.count >= period else { return ([], [], []) }
+
+        let mid = emaSeries(period: period, points: points)
+        guard !mid.isEmpty else { return ([], [], []) }
+
+        let rangeValues = points.map { point in
+            point.index == 0 ? 0 : abs(point.value - points[max(point.index - 1, 0)].value)
+        }
+
+        var atrSeries: [Double] = []
+        atrSeries.reserveCapacity(points.count - period + 1)
+        var rollingRange = rangeValues.prefix(period).reduce(0, +)
+        atrSeries.append(rollingRange / Double(period))
+
+        if points.count > period {
+            for index in period..<points.count {
+                rollingRange += rangeValues[index]
+                rollingRange -= rangeValues[index - period]
+                atrSeries.append(rollingRange / Double(period))
+            }
+        }
+
+        let alignedCount = min(mid.count, atrSeries.count)
+        guard alignedCount > 0 else { return ([], [], []) }
+
+        var upper: [IndicatorPoint] = []
+        var lower: [IndicatorPoint] = []
+        upper.reserveCapacity(alignedCount)
+        lower.reserveCapacity(alignedCount)
+
+        for index in 0..<alignedCount {
+            let midPoint = mid[index]
+            let bandOffset = atrSeries[index] * multiplier
+            upper.append(IndicatorPoint(date: midPoint.date, value: midPoint.value + bandOffset))
+            lower.append(IndicatorPoint(date: midPoint.date, value: midPoint.value - bandOffset))
+        }
+
+        return (Array(mid.prefix(alignedCount)), upper, lower)
+    }
+
+    private func axisLabelOverlay(
+        size: CGSize,
+        xDomain: ClosedRange<Date>,
+        yAxis: YAxisConfiguration,
+        xTicks: [Date],
+        labels: [Date: String]
+    ) -> some View {
+        let plot = plotRect(in: size)
+
+        return ZStack(alignment: .topLeading) {
+            ForEach(yAxis.ticks, id: \.self) { tick in
+                Text(formatYAxisValue(tick, step: yAxis.step))
+                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.42))
+                    .frame(width: 54, alignment: .trailing)
+                    .position(
+                        x: plot.minX - 34,
+                        y: yPosition(for: tick, in: plot, yDomain: yAxis.domain)
+                    )
+            }
+
+            ForEach(xTicks, id: \.timeIntervalSince1970) { tick in
+                Text(labels[tick] ?? Self.timeFormatter.string(from: tick))
+                    .font(.system(size: 9.5, weight: .regular, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.40))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .frame(width: 74)
+                    .position(
+                        x: xPosition(for: tick, in: plot, xDomain: xDomain),
+                        y: plot.maxY + 24
+                    )
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func hoverOverlay(
+        point: GraphPoint,
+        plot: CGRect,
+        xDomain: ClosedRange<Date>,
+        yAxis: YAxisConfiguration
+    ) -> some View {
+        let location = position(for: point, in: plot, xDomain: xDomain, yDomain: yAxis.domain)
+        let tooltipX = min(max(location.x + 88, plot.minX + 96), plot.maxX - 96)
+        let tooltipY = min(max(location.y - 46, plot.minY + 34), plot.maxY - 34)
+
+        return ZStack(alignment: .topLeading) {
+            Path { path in
+                path.move(to: CGPoint(x: location.x, y: plot.minY))
+                path.addLine(to: CGPoint(x: location.x, y: plot.maxY))
+            }
+            .stroke(.white.opacity(0.20), style: StrokeStyle(lineWidth: 1, dash: [3, 6]))
+
+            Circle()
+                .fill(.white.opacity(0.96))
+                .frame(width: 9, height: 9)
+                .overlay(Circle().stroke(Color.black.opacity(0.28), lineWidth: 0.75))
+                .position(location)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(point.value, format: .number.precision(.fractionLength(2)))
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.94))
+
+                Text(Self.hoverFormatter.string(from: point.date))
+                    .font(.system(size: 10.5, weight: .medium, design: .default))
+                    .foregroundStyle(.white.opacity(0.48))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color(red: 0.08, green: 0.095, blue: 0.11).opacity(0.96))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                    )
+            )
+            .position(x: tooltipX, y: tooltipY)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func position(
+        for point: GraphPoint,
+        in plot: CGRect,
+        xDomain: ClosedRange<Date>,
+        yDomain: ClosedRange<Double>
+    ) -> CGPoint {
+        let x = xPosition(for: point.date, in: plot, xDomain: xDomain)
+        let y = yPosition(for: point.value, in: plot, yDomain: yDomain)
+        return CGPoint(x: x, y: y)
+    }
+
+    private func xPosition(for date: Date, in plot: CGRect, xDomain: ClosedRange<Date>) -> CGFloat {
+        let span = max(xDomain.upperBound.timeIntervalSince(xDomain.lowerBound), 1)
+        let progress = date.timeIntervalSince(xDomain.lowerBound) / span
+        return plot.minX + CGFloat(progress.clamped(to: 0...1)) * plot.width
+    }
+
+    private func yPosition(for value: Double, in plot: CGRect, yDomain: ClosedRange<Double>) -> CGFloat {
+        let span = max(yDomain.upperBound - yDomain.lowerBound, 0.0001)
+        let progress = (value - yDomain.lowerBound) / span
+        return plot.maxY - CGFloat(progress.clamped(to: 0...1)) * plot.height
+    }
+
+    private func nearestPoint(
+        to location: CGPoint?,
+        in plot: CGRect,
+        points: [GraphPoint],
+        xDomain: ClosedRange<Date>
+    ) -> GraphPoint? {
+        guard
+            let location,
+            plot.insetBy(dx: -10, dy: -18).contains(location),
+            !points.isEmpty
+        else {
+            return nil
+        }
+
+        if let latestDate = points.last?.date {
+            let latestX = xPosition(for: latestDate, in: plot, xDomain: xDomain)
+            if location.x > latestX + 8 {
+                return nil
+            }
+        }
+
+        let rawProgress = Double((location.x - plot.minX) / max(plot.width, 1))
+        let progress = rawProgress.clamped(to: 0...1)
+        let targetTime = xDomain.lowerBound.timeIntervalSince1970
+            + xDomain.upperBound.timeIntervalSince(xDomain.lowerBound) * progress
+
+        return points.min { lhs, rhs in
+            abs(lhs.date.timeIntervalSince1970 - targetTime) < abs(rhs.date.timeIntervalSince1970 - targetTime)
         }
     }
 
@@ -1143,11 +1951,12 @@ private struct ChartStage: View {
     private func targetXDomain() -> ClosedRange<Date>? {
         guard let latestDate = points.last?.date else { return nil }
         let lowerBound = latestDate.addingTimeInterval(-selectedRange.marketTimeRange.duration)
-        return lowerBound...latestDate
+        let upperBound = latestDate.addingTimeInterval(foresightRange.duration)
+        return lowerBound...upperBound
     }
 
     private func fallbackXDomain() -> ClosedRange<Date> {
-        let upperBound = Date()
+        let upperBound = Date().addingTimeInterval(foresightRange.duration)
         return upperBound.addingTimeInterval(-selectedRange.marketTimeRange.duration)...upperBound
     }
 
@@ -1246,8 +2055,11 @@ private struct ChartStage: View {
         return tickDates
     }
 
-    private func chartSegments() -> [ChartSegment] {
-        let ordered = points.sorted { $0.date < $1.date }
+    private func chartRenderablePoints() -> [GraphPoint] {
+        var ordered = points
+        if !isSortedByDate(ordered) {
+            ordered.sort { $0.date < $1.date }
+        }
         guard !ordered.isEmpty else { return [] }
 
         var deduped: [GraphPoint] = []
@@ -1261,7 +2073,19 @@ private struct ChartStage: View {
             }
         }
 
-        return deduped.count > 1 ? [ChartSegment(id: 0, points: deduped)] : []
+        return deduped
+    }
+
+    private func isSortedByDate(_ points: [GraphPoint]) -> Bool {
+        guard points.count > 1 else { return true }
+
+        for index in points.indices.dropFirst() {
+            if points[index - 1].date > points[index].date {
+                return false
+            }
+        }
+
+        return true
     }
 
     private var adaptiveMaximumRenderableGap: TimeInterval {
@@ -1411,6 +2235,22 @@ private struct ChartTopControls: View {
 
 private struct InstrumentSearchControl: View {
     @ObservedObject var market: AeviumMarketViewModel
+    var width: CGFloat = 180
+    @FocusState private var isFocused: Bool
+    @State private var highlightedResultID: InstrumentID?
+    @State private var keyMonitor: Any?
+
+    private var trimmedQuery: String {
+        market.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var shouldShowResults: Bool {
+        isFocused && (market.isSearching || !market.searchResults.isEmpty || trimmedQuery.count >= 2 || market.errorMessage != nil)
+    }
+
+    private var visibleResults: [InstrumentMetadata] {
+        Array(market.searchResults.prefix(7))
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -1424,15 +2264,29 @@ private struct InstrumentSearchControl: View {
                     set: { market.updateSearchQuery($0) }
                 ))
                 .textFieldStyle(.plain)
-                .font(.system(size: 11.5, weight: .semibold, design: .default))
+                .font(.system(size: 12.5, weight: .semibold, design: .default))
                 .foregroundStyle(.white.opacity(0.82))
-                .frame(width: 104)
+                .frame(maxWidth: .infinity)
+                .focused($isFocused)
                 .onSubmit {
-                    market.commitSearch()
+                    commitSearchSelection()
+                }
+
+                if !trimmedQuery.isEmpty {
+                    Button {
+                        market.updateSearchQuery("")
+                        isFocused = true
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.32))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Clear search")
                 }
             }
             .padding(.horizontal, 10)
-            .frame(height: 35)
+            .frame(width: width, height: 36)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.black.opacity(0.16))
@@ -1442,45 +2296,211 @@ private struct InstrumentSearchControl: View {
                     )
             )
 
-            if !market.searchResults.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(market.searchResults.prefix(6), id: \.id) { instrument in
-                        Button {
-                            market.selectInstrument(instrument)
-                        } label: {
-                            HStack(spacing: 8) {
-                                Text(instrument.compactTitle)
-                                    .font(.system(size: 11, weight: .semibold, design: .default))
-                                    .foregroundStyle(.white.opacity(0.88))
-                                    .frame(width: 74, alignment: .leading)
-                                Text(instrument.provider.uppercased())
-                                    .font(.system(size: 8.5, weight: .semibold, design: .default))
-                                    .tracking(1.0)
-                                    .foregroundStyle(.white.opacity(0.36))
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 9)
-                            .frame(height: 27)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(5)
-                .frame(width: 180)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(Color(red: 0.08, green: 0.095, blue: 0.11).opacity(0.98))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                        )
-                )
-                .offset(y: 39)
-                .zIndex(20)
+            if shouldShowResults {
+                searchMenu
+                    .offset(y: 41)
+                    .zIndex(20)
             }
         }
-        .frame(width: 146, height: 35, alignment: .topLeading)
+        .frame(width: width, height: 36, alignment: .topLeading)
+        .onChange(of: isFocused) { _, focused in
+            if focused {
+                installKeyMonitor()
+                alignHighlightToResults(preferFirst: true)
+            } else {
+                removeKeyMonitor()
+                highlightedResultID = nil
+            }
+        }
+        .onChange(of: market.searchResults) { _, _ in
+            alignHighlightToResults(preferFirst: true)
+        }
+        .onChange(of: market.searchQuery) { _, _ in
+            alignHighlightToResults(preferFirst: false)
+        }
+        .onDisappear {
+            removeKeyMonitor()
+        }
+    }
+
+    private var searchMenu: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if market.isSearching {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Searching instruments")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.52))
+                }
+                .frame(height: 34)
+                .padding(.horizontal, 10)
+            } else if !market.searchResults.isEmpty {
+                ForEach(visibleResults, id: \.id) { instrument in
+                    resultRow(instrument, isHighlighted: instrument.id == highlightedResultID)
+                }
+            } else if trimmedQuery.count >= 2 {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("No matches")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.68))
+                    Text("Press Return to resolve \(trimmedQuery.uppercased()).")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.40))
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 45, alignment: .leading)
+            } else if let error = market.errorMessage {
+                Text(error)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Color(red: 0.95, green: 0.55, blue: 0.55))
+                    .lineLimit(2)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+            }
+        }
+        .padding(5)
+        .frame(width: max(width + 66, 260), alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color(red: 0.08, green: 0.095, blue: 0.11).opacity(0.98))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                )
+        )
+        .shadow(color: Color.black.opacity(0.26), radius: 18, x: 0, y: 14)
+    }
+
+    private func resultRow(_ instrument: InstrumentMetadata, isHighlighted: Bool) -> some View {
+        Button {
+            selectResult(instrument)
+        } label: {
+            HStack(spacing: 9) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(instrument.compactTitle.uppercased())
+                    .font(.system(size: 12, weight: .semibold, design: .default))
+                    .foregroundStyle(isHighlighted ? Color(red: 0.78, green: 0.92, blue: 0.86) : .white.opacity(0.88))
+                    .lineLimit(1)
+
+                    Text(instrument.name.isEmpty ? instrument.exchange : instrument.name)
+                        .font(.system(size: 10.5, weight: .medium, design: .default))
+                        .foregroundStyle(.white.opacity(0.38))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Text(instrument.provider.uppercased())
+                    .font(.system(size: 8.5, weight: .semibold, design: .default))
+                    .tracking(1.0)
+                    .foregroundStyle(isHighlighted ? .white.opacity(0.58) : .white.opacity(0.36))
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 38)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isHighlighted ? Color.white.opacity(0.075) : Color.white.opacity(0.001))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(isHighlighted ? Color(red: 0.74, green: 0.88, blue: 0.82).opacity(0.18) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            if hovering {
+                highlightedResultID = instrument.id
+            }
+        }
+    }
+
+    private func installKeyMonitor() {
+        removeKeyMonitor()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            handleKeyDown(event) ? nil : event
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
+        }
+    }
+
+    private func handleKeyDown(_ event: NSEvent) -> Bool {
+        guard isFocused else { return false }
+
+        switch event.keyCode {
+        case 125:
+            moveHighlight(by: 1)
+            return !visibleResults.isEmpty
+        case 126:
+            moveHighlight(by: -1)
+            return !visibleResults.isEmpty
+        case 36, 76:
+            commitSearchSelection()
+            return true
+        case 53:
+            isFocused = false
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func moveHighlight(by offset: Int) {
+        let results = visibleResults
+        guard !results.isEmpty else { return }
+
+        let currentIndex = highlightedResultID.flatMap { selectedID in
+            results.firstIndex { $0.id == selectedID }
+        }
+
+        let nextIndex: Int
+        if let currentIndex {
+            nextIndex = (currentIndex + offset + results.count) % results.count
+        } else {
+            nextIndex = offset < 0 ? results.count - 1 : 0
+        }
+
+        highlightedResultID = results[nextIndex].id
+    }
+
+    private func commitSearchSelection() {
+        if let instrument = highlightedInstrument ?? visibleResults.first {
+            selectResult(instrument)
+        } else {
+            market.commitSearch()
+            isFocused = false
+        }
+    }
+
+    private func selectResult(_ instrument: InstrumentMetadata) {
+        market.selectInstrument(instrument)
+        highlightedResultID = nil
+        isFocused = false
+    }
+
+    private var highlightedInstrument: InstrumentMetadata? {
+        guard let highlightedResultID else { return nil }
+        return visibleResults.first { $0.id == highlightedResultID }
+    }
+
+    private func alignHighlightToResults(preferFirst: Bool) {
+        let results = visibleResults
+        guard !results.isEmpty else {
+            highlightedResultID = nil
+            return
+        }
+
+        if let highlightedResultID, results.contains(where: { $0.id == highlightedResultID }) {
+            return
+        }
+
+        highlightedResultID = preferFirst ? results.first?.id : nil
     }
 }
 
@@ -1545,6 +2565,61 @@ private struct SyncStatusStrip: View {
     }
 }
 
+private struct MarketSeriesLoadingOverlay: View {
+    let symbol: String
+    let state: SyncState
+
+    private var message: String {
+        switch state.state {
+        case .idle:
+            return "Preparing feed"
+        case .connecting, .backfilling, .connected, .delayed, .rateLimited, .disconnected, .failed:
+            return state.message
+        }
+    }
+
+    private var tint: Color {
+        switch state.state {
+        case .failed, .disconnected:
+            return Color(red: 0.90, green: 0.50, blue: 0.52)
+        case .rateLimited, .delayed:
+            return Color(red: 0.86, green: 0.66, blue: 0.46)
+        default:
+            return Color(red: 0.60, green: 0.82, blue: 0.74)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+                .tint(tint)
+
+            VStack(spacing: 3) {
+                Text(symbol.uppercased())
+                    .font(.system(size: 13, weight: .semibold, design: .default))
+                    .foregroundStyle(.white.opacity(0.82))
+
+                Text(message)
+                    .font(.system(size: 11.5, weight: .medium, design: .default))
+                    .foregroundStyle(.white.opacity(0.44))
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(red: 0.07, green: 0.078, blue: 0.09).opacity(0.90))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
+        .shadow(color: Color.black.opacity(0.22), radius: 18, x: 0, y: 12)
+    }
+}
+
 private struct AeviumRangeSelector: View {
     @Binding var selectedRange: ChartRange
 
@@ -1558,7 +2633,7 @@ private struct AeviumRangeSelector: View {
                         .font(.system(size: 11, weight: .medium, design: .default))
                         .monospacedDigit()
                         .foregroundStyle(selectedRange == range ? .white.opacity(0.9) : .white.opacity(0.38))
-                        .frame(width: 34, height: 27)
+                        .frame(width: 31, height: 27)
                         .background(
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
                                 .fill(selectedRange == range ? Color.white.opacity(0.105) : Color.clear)
@@ -1579,6 +2654,258 @@ private struct AeviumRangeSelector: View {
     }
 }
 
+private struct ForesightSelector: View {
+    @Binding var selectedForesight: ForesightRange
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(ForesightRange.allCases) { range in
+                Button {
+                    selectedForesight = range
+                } label: {
+                    Text(range.rawValue)
+                        .font(.system(size: 11, weight: .medium, design: .default))
+                        .monospacedDigit()
+                        .foregroundStyle(selectedForesight == range ? .white.opacity(0.9) : .white.opacity(0.38))
+                        .frame(width: range == .off ? 34 : 36, height: 27)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(selectedForesight == range ? Color.white.opacity(0.105) : Color.clear)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.black.opacity(0.16))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
+        .help("Foresight horizon")
+    }
+}
+
+private struct IndicatorMenuButton: View {
+    @Binding var selectedIndicators: Set<ForesightIndicator>
+    @State private var isPopoverPresented = false
+    private let columns = [
+        GridItem(.flexible(minimum: 132), spacing: 8),
+        GridItem(.flexible(minimum: 132), spacing: 8)
+    ]
+
+    private var selectedCount: Int {
+        selectedIndicators.count
+    }
+
+    var body: some View {
+        Button {
+            isPopoverPresented.toggle()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "waveform.path.ecg.rectangle")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.58))
+
+                Text("Indicators")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.78))
+
+                Spacer(minLength: 0)
+
+                Text(selectedCount > 0 ? "\(selectedCount) on" : "None")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(selectedCount > 0 ? 0.48 : 0.34))
+
+                if selectedCount > 0 {
+                    Text("\(selectedCount)")
+                        .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.black.opacity(0.72))
+                        .frame(minWidth: 18, minHeight: 18)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color(red: 0.76, green: 0.88, blue: 0.82))
+                        )
+                }
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.34))
+            }
+            .padding(.horizontal, 12)
+            .frame(width: 198, height: 35, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.black.opacity(isPopoverPresented ? 0.24 : 0.16))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.white.opacity(isPopoverPresented ? 0.14 : 0.08), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $isPopoverPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+            indicatorPopover
+        }
+        .help("Chart indicators")
+    }
+
+    private var indicatorPopover: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Indicators")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.86))
+
+                    Text(selectedCount == 0 ? "No overlays active" : "\(selectedCount) active")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.44))
+                }
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 6) {
+                    actionCapsule("All") {
+                        selectedIndicators = Set(ForesightIndicator.menuCases)
+                    }
+
+                    actionCapsule("Clear") {
+                        selectedIndicators.removeAll()
+                    }
+                }
+            }
+
+            ForEach(ForesightIndicatorGroup.allCases) { group in
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack {
+                        Text(group.title)
+                            .font(.system(size: 10.5, weight: .bold))
+                            .tracking(1.1)
+                            .foregroundStyle(.white.opacity(0.40))
+                        Spacer()
+                    }
+
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                        ForEach(group.indicators) { indicator in
+                            indicatorRow(for: indicator)
+                        }
+                    }
+                }
+                .padding(.top, group == .allCases.first ? 0 : 2)
+            }
+        }
+        .padding(16)
+        .frame(width: 352)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(red: 0.08, green: 0.085, blue: 0.095))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
+    }
+
+    private func indicatorRow(for indicator: ForesightIndicator) -> some View {
+        Button {
+            toggle(indicator)
+        } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(indicator.color.opacity(selectedIndicators.contains(indicator) ? 0.34 : 0.16))
+                        .frame(width: 24, height: 24)
+
+                    Image(systemName: selectedIndicators.contains(indicator) ? "checkmark" : "plus")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundStyle(selectedIndicators.contains(indicator) ? .white.opacity(0.92) : indicator.color.opacity(0.92))
+                }
+
+                Text(indicator.menuTitle)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.84))
+                    .lineLimit(1)
+
+                Spacer(minLength: 8)
+
+                Image(systemName: selectedIndicators.contains(indicator) ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(selectedIndicators.contains(indicator) ? indicator.color.opacity(0.96) : .white.opacity(0.22))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.white.opacity(selectedIndicators.contains(indicator) ? 0.075 : 0.03))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(selectedIndicators.contains(indicator) ? indicator.color.opacity(0.34) : Color.white.opacity(0.06), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func actionCapsule(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.68))
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.white.opacity(0.05))
+                        .overlay(
+                            Capsule(style: .continuous)
+                                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func toggle(_ indicator: ForesightIndicator) {
+        if selectedIndicators.contains(indicator) {
+            selectedIndicators.remove(indicator)
+        } else {
+            selectedIndicators.insert(indicator)
+        }
+    }
+}
+
+private struct ChartResolutionControl: View {
+    @Binding var chartSmoothness: Double
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "slider.horizontal.below.rectangle")
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.55))
+
+            Slider(value: $chartSmoothness, in: 0...1)
+                .tint(Color(red: 0.77, green: 0.85, blue: 0.92))
+                .frame(width: 120)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 35)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.black.opacity(0.16))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
+        .help("Chart smoothing from raw to super smooth")
+    }
+}
+
 private struct MarketInspector: View {
     let points: [GraphPoint]
     let analytics: MarketSeriesAnalytics
@@ -1588,6 +2915,7 @@ private struct MarketInspector: View {
     let instrumentSession: String
     let selectedRange: ChartRange
     let isUp: Bool
+    @Binding var selectedPanel: InspectorPanel
     let onSelectWatchlistInstrument: (InstrumentMetadata) -> Void
 
     private var displaySymbol: String {
@@ -1766,260 +3094,408 @@ private struct MarketInspector: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 12) {
-                card(tint: isUp ? Color(red: 0.16, green: 0.36, blue: 0.30) : Color(red: 0.36, green: 0.20, blue: 0.23)) {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 8) {
-                                Text(displaySymbol)
-                                    .font(.system(size: 16, weight: .semibold, design: .default))
-                                    .foregroundStyle(.white.opacity(0.92))
-
-                                HStack(spacing: 5) {
-                                    Circle()
-                                        .fill(Color(red: 0.48, green: 0.85, blue: 0.69))
-                                        .frame(width: 6, height: 6)
-                                    Text(marketState)
-                                        .font(.system(size: 11, weight: .medium, design: .default))
-                                        .foregroundStyle(.white.opacity(0.56))
-                                }
-                            }
-
-                            Text(lastValue, format: .number.precision(.fractionLength(2)))
-                                .font(.system(size: 35, weight: .semibold, design: .default))
-                                .monospacedDigit()
-                                .foregroundStyle(.white.opacity(0.96))
-                                .contentTransition(.numericText())
-                                .animation(.easeOut(duration: 0.18), value: lastValue)
-                                .hoverInsight(
-                                    InspectorInsight(
-                                        title: "Last Price",
-                                        meaning: "Most recent traded price for the current symbol.",
-                                        expectedRange: "\(number(lowValue)) to \(number(highValue)) for this selected window.",
-                                        action: "If price repeatedly closes outside this band, reassess trend strength and widen risk limits."
-                                    )
-                                )
-
-                            Text(signedPercentText)
-                                .font(.system(size: 14, weight: .medium, design: .default))
-                                .monospacedDigit()
-                                .foregroundStyle(isUp ? Color(red: 0.60, green: 0.82, blue: 0.72) : Color(red: 0.88, green: 0.58, blue: 0.58))
-                        }
-
-                        Spacer(minLength: 10)
-
-                        VolumeBalanceRing(
-                            buyShare: buyShare,
-                            buyColor: Color(red: 0.56, green: 0.84, blue: 0.72),
-                            sellColor: Color(red: 0.86, green: 0.56, blue: 0.56)
-                        )
-                        .frame(width: 60, height: 60)
-                        .hoverInsight(
-                            InspectorInsight(
-                                title: "Buy vs Sell Dominance",
-                                meaning: "Shows the directional split of participation between aggressive buyers and sellers.",
-                                expectedRange: "Healthy two-way markets often sit near 45/55 to 55/45.",
-                                action: "If skew exceeds 65/35 for sustained periods, expect trend continuation or sharp mean-reversion."
-                            )
-                        )
-                    }
-
-                    VStack(spacing: 9) {
-                        HStack {
-                            volumeBadge("Buy", value: buyVolume, color: Color(red: 0.56, green: 0.84, blue: 0.72))
-                            Spacer()
-                            volumeBadge("Sell", value: sellVolume, color: Color(red: 0.86, green: 0.56, blue: 0.56))
-                        }
-
-                        splitVolumeBar(buyShare: buyShare, sellShare: sellShare)
-                            .hoverInsight(
-                                InspectorInsight(
-                                    title: "Volume Split",
-                                    meaning: "Relative participation by side within the active observation window.",
-                                    expectedRange: "Balanced markets cluster around 50/50; strong directional sessions can stretch to 70/30.",
-                                    action: "Outside 70/30, tighten stops and validate with volatility before chasing momentum."
-                                )
-                            )
-                    }
-                }
-
-                watchlistCard
-
-                card(tint: Color(red: 0.13, green: 0.20, blue: 0.28)) {
-                    sectionHeader("ORDER FLOW")
-
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("Imbalance")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.56))
-                        Spacer()
-                        Text("\(imbalancePercent >= 0 ? "+" : "")\(imbalancePercent.formatted(.number.precision(.fractionLength(1))))%")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(imbalancePercent >= 0 ? Color(red: 0.58, green: 0.84, blue: 0.73) : Color(red: 0.88, green: 0.58, blue: 0.58))
-                            .monospacedDigit()
-                    }
-                    .hoverInsight(
-                        InspectorInsight(
-                            title: "Order Imbalance",
-                            meaning: "Net directional pressure from buying versus selling activity.",
-                            expectedRange: "Normal rotational regimes often stay within -12% to +12%.",
-                            action: "If imbalance persists above +/-20%, favor trend setups until momentum deteriorates."
-                        )
-                    )
-
-                    SparklineArea(data: pulseSeries, color: Color(red: 0.64, green: 0.86, blue: 0.78))
-                        .frame(height: 44)
-                        .hoverInsight(
-                            InspectorInsight(
-                                title: "Flow Pulse",
-                                meaning: "Short-horizon shape of demand/supply acceleration.",
-                                expectedRange: "Smooth undulations indicate stable participation; abrupt spikes imply event-driven flow.",
-                                action: "When pulses become erratic, reduce sizing and wait for confirmation candles."
-                            )
-                        )
-
-                    VStack(spacing: 8) {
-                        ForEach(Array(depthSeries.enumerated()), id: \.offset) { index, value in
-                            depthRow(
-                                label: "L\(index + 1)",
-                                bid: value,
-                                ask: (1 - value).clamped(to: 0.08...0.92)
-                            )
-                        }
-                    }
-                }
-
-                card(tint: Color(red: 0.16, green: 0.14, blue: 0.24)) {
-                    sectionHeader("PRICE STRUCTURE")
-
-                    priceStructureTrack()
-                        .frame(height: 56)
-                        .hoverInsight(
-                            InspectorInsight(
-                                title: "Price Structure Track",
-                                meaning: "Shows current price, VWAP proxy, and median position inside the active high-low range.",
-                                expectedRange: "In balanced markets, last price often rotates around VWAP/median instead of hugging extremes.",
-                                action: "If last price pins at an edge while VWAP lags, favor continuation. If it snaps back to VWAP, fade extension."
-                            )
-                        )
-
-                    HStack(spacing: 8) {
-                        structureChip("Range", number(highValue - lowValue), tone: Color(red: 0.70, green: 0.80, blue: 0.93))
-                        structureChip("VWAP Drift", signedPercent(vwapDriftPercent), tone: vwapDriftPercent >= 0 ? Color(red: 0.58, green: 0.84, blue: 0.74) : Color(red: 0.86, green: 0.60, blue: 0.60))
-                        structureChip("Z-Score", signedNumber(zScore), tone: abs(zScore) < 1.5 ? Color(red: 0.69, green: 0.78, blue: 0.93) : Color(red: 0.87, green: 0.67, blue: 0.57))
-                    }
-
-                    structureBar(
-                        label: "Range Position",
-                        leftCaption: "Low \(distanceFromLowPercent.formatted(.number.precision(.fractionLength(0))))%",
-                        rightCaption: "High \(distanceToHighPercent.formatted(.number.precision(.fractionLength(0))))%",
-                        value: percentileInRange
-                    )
-                    .hoverInsight(
-                        InspectorInsight(
-                            title: "Range Position",
-                            meaning: "Relative location of price between window low and high.",
-                            expectedRange: "Middle zone 35-65% usually indicates rotational behavior.",
-                            action: "Persistent >80% or <20% suggests directional pressure; switch from mean-reversion to trend tactics."
-                        )
-                    )
-
-                    structureBar(
-                        label: "Mean Reversion Gap",
-                        leftCaption: "Median \(signedPercent(medianDriftPercent))",
-                        rightCaption: "VWAP \(signedPercent(vwapDriftPercent))",
-                        value: ((vwapDriftPercent + 8) / 16).clamped(to: 0...1)
-                    )
-                    .hoverInsight(
-                        InspectorInsight(
-                            title: "Reversion Gap",
-                            meaning: "Distance between current price and central anchors (median and VWAP).",
-                            expectedRange: "Small gaps indicate equilibrium; large sustained gaps imply directional expansion.",
-                            action: "If both drifts widen with strong flow, favor continuation. If flow weakens, prepare for snapback."
-                        )
-                    )
-                }
-
-                card(tint: Color(red: 0.14, green: 0.22, blue: 0.20)) {
-                    sectionHeader("MODEL SIGNALS")
-                    signalBar("Flow", value: flowScore, color: Color(red: 0.54, green: 0.78, blue: 0.68))
-                        .hoverInsight(
-                            InspectorInsight(
-                                title: "Flow Score",
-                                meaning: "Directional participation intensity after normalization.",
-                                expectedRange: "Typical neutral range: 40 to 60.",
-                                action: "Above 65 supports continuation. Below 35 favors defensive or mean-reversion posture."
-                            )
-                        )
-                    signalBar("Stress", value: stressScore, color: Color(red: 0.78, green: 0.60, blue: 0.48))
-                        .hoverInsight(
-                            InspectorInsight(
-                                title: "Stress Score",
-                                meaning: "Compression between volatility and directional conviction.",
-                                expectedRange: "Most stable regimes hold below 55.",
-                                action: "Above 70, reduce leverage and widen slippage assumptions."
-                            )
-                        )
-                    signalBar("Noise", value: noiseScore, color: Color(red: 0.56, green: 0.66, blue: 0.78))
-                        .hoverInsight(
-                            InspectorInsight(
-                                title: "Noise Score",
-                                meaning: "Choppiness ratio of movement that does not contribute to net trend.",
-                                expectedRange: "Efficient trends often remain under 40.",
-                                action: "Above 55, avoid breakout entries unless confirmed by volume expansion."
-                            )
-                        )
-                    signalBar("Confidence", value: confidenceScore, color: Color(red: 0.68, green: 0.76, blue: 0.94))
-                        .hoverInsight(
-                            InspectorInsight(
-                                title: "Confidence Score",
-                                meaning: "Composite certainty from flow quality, volatility and noise.",
-                                expectedRange: "Actionable zone is usually above 55.",
-                                action: "Below 45, prefer smaller position sizes and wait for structure confirmation."
-                            )
-                        )
-                }
-
-                card(tint: Color(red: 0.13, green: 0.18, blue: 0.27)) {
-                    sectionHeader("MOMENTUM & TREND")
-                    gridMetrics([
-                        ("Mean Ret", signedPercent(averageReturn * 100)),
-                        ("Median Ret", signedPercent(medianReturn * 100)),
-                        ("Ret Vol", "\(realizedVolPercent.formatted(.number.precision(.fractionLength(2))))%"),
-                        ("Down Dev", "\(downsideDeviationPercent.formatted(.number.precision(.fractionLength(2))))%"),
-                        ("Avg Move", "\(averageCandleMovePercent.formatted(.number.precision(.fractionLength(2))))%"),
-                        ("Slope", signedPercent(trendSlopePercentPerStep)),
-                        ("Efficiency", "\(Int(efficiencyRatio * 100))"),
-                        ("Trend", trendQuality),
-                        ("Drawdown", "\(maxDrawdownPercent.formatted(.number.precision(.fractionLength(2))))%"),
-                        ("Recovery", "\(recoveryPercentFromLow.formatted(.number.precision(.fractionLength(2))))%"),
-                        ("Sortino*", signedNumber(sortinoLike))
-                    ])
-                }
-
-                card(tint: Color(red: 0.22, green: 0.16, blue: 0.18)) {
-                    sectionHeader("RISK MAP")
-                    gridMetrics([
-                        ("Bias", isUp ? "Bullish Drift" : "Risk-off"),
-                        ("Regime", volatilityPercent > 4.5 ? "Elevated" : "Stable"),
-                        ("Pressure", "\(Int(abs(pressureScore) * 100))"),
-                        ("Imbalance", signedPercent(imbalancePercent)),
-                        ("Net Vol", compactVolume(volumeDelta)),
-                        ("State", marketState),
-                        ("Timeframe", selectedRange.rawValue),
-                        ("Window", "\(windowHours.formatted(.number.precision(.fractionLength(1))))h"),
-                        ("Cadence", "\(sampleCadenceMinutes.formatted(.number.precision(.fractionLength(1))))m"),
-                        ("Liquidity", Int(liquidityProxy).formatted()),
-                        ("Sharpe*", signedNumber(averageReturn / max(returnStdDev, 0.0001))),
-                        ("VaR 95*", "\(var95Percent.formatted(.number.precision(.fractionLength(2))))%"),
-                        ("CVaR 95*", "\(cvar95Percent.formatted(.number.precision(.fractionLength(2))))%")
-                    ])
-                }
+                instrumentHeroCard
+                panelSelector
+                selectedPanelContent
             }
             .padding(.top, 22)
             .padding(.horizontal, 16)
             .padding(.bottom, 18)
         }
-        .background(Color.black.opacity(0.10))
+        .background(
+            LinearGradient(
+                colors: [
+                    Color(red: 0.065, green: 0.070, blue: 0.082),
+                    Color(red: 0.055, green: 0.058, blue: 0.068)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+    }
+
+    private var instrumentHeroCard: some View {
+        card(tint: isUp ? Color(red: 0.16, green: 0.36, blue: 0.30) : Color(red: 0.36, green: 0.20, blue: 0.23)) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text(displaySymbol)
+                            .font(.system(size: 16, weight: .semibold, design: .default))
+                            .foregroundStyle(.white.opacity(0.92))
+
+                        HStack(spacing: 5) {
+                            Circle()
+                                .fill(Color(red: 0.48, green: 0.85, blue: 0.69))
+                                .frame(width: 6, height: 6)
+                            Text(marketState)
+                                .font(.system(size: 11, weight: .medium, design: .default))
+                                .foregroundStyle(.white.opacity(0.56))
+                        }
+                    }
+
+                    if pointCount > 1 {
+                        Text(lastValue, format: .number.precision(.fractionLength(2)))
+                            .font(.system(size: 35, weight: .semibold, design: .default))
+                            .monospacedDigit()
+                            .foregroundStyle(.white.opacity(0.96))
+                            .contentTransition(.numericText())
+                            .animation(.easeOut(duration: 0.18), value: lastValue)
+                            .hoverInsight(
+                                InspectorInsight(
+                                    title: "Last Price",
+                                    meaning: "Most recent traded price for the current symbol.",
+                                    expectedRange: "\(number(lowValue)) to \(number(highValue)) for this selected window.",
+                                    action: "If price repeatedly closes outside this band, reassess trend strength and widen risk limits."
+                                )
+                            )
+
+                        Text(signedPercentText)
+                            .font(.system(size: 14, weight: .medium, design: .default))
+                            .monospacedDigit()
+                            .foregroundStyle(isUp ? Color(red: 0.60, green: 0.82, blue: 0.72) : Color(red: 0.88, green: 0.58, blue: 0.58))
+                    } else {
+                        Text("Loading")
+                            .font(.system(size: 32, weight: .semibold, design: .default))
+                            .foregroundStyle(.white.opacity(0.82))
+
+                        Text("Waiting for market data")
+                            .font(.system(size: 12, weight: .medium, design: .default))
+                            .foregroundStyle(.white.opacity(0.42))
+                    }
+                }
+
+                Spacer(minLength: 10)
+
+                if pointCount > 1 {
+                    VolumeBalanceRing(
+                        buyShare: buyShare,
+                        buyColor: Color(red: 0.56, green: 0.84, blue: 0.72),
+                        sellColor: Color(red: 0.86, green: 0.56, blue: 0.56)
+                    )
+                    .frame(width: 60, height: 60)
+                    .hoverInsight(
+                        InspectorInsight(
+                            title: "Buy vs Sell Dominance",
+                            meaning: "Shows the directional split of participation between aggressive buyers and sellers.",
+                            expectedRange: "Healthy two-way markets often sit near 45/55 to 55/45.",
+                            action: "If skew exceeds 65/35 for sustained periods, expect trend continuation or sharp mean-reversion."
+                        )
+                    )
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 60, height: 60)
+                        .tint(Color(red: 0.60, green: 0.82, blue: 0.74))
+                }
+            }
+
+            if pointCount > 1 {
+                VStack(spacing: 9) {
+                    HStack {
+                        volumeBadge("Buy", value: buyVolume, color: Color(red: 0.56, green: 0.84, blue: 0.72))
+                        Spacer()
+                        volumeBadge("Sell", value: sellVolume, color: Color(red: 0.86, green: 0.56, blue: 0.56))
+                    }
+
+                    splitVolumeBar(buyShare: buyShare, sellShare: sellShare)
+                        .hoverInsight(
+                            InspectorInsight(
+                                title: "Volume Split",
+                                meaning: "Relative participation by side within the active observation window.",
+                                expectedRange: "Balanced markets cluster around 50/50; strong directional sessions can stretch to 70/30.",
+                                action: "Outside 70/30, tighten stops and validate with volatility before chasing momentum."
+                            )
+                        )
+                }
+            } else {
+                Divider()
+                    .overlay(Color.white.opacity(0.08))
+
+                Text("The chart will update when the first cached or live samples arrive.")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.44))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var panelSelector: some View {
+        HStack(spacing: 4) {
+            ForEach(InspectorPanel.allCases) { panel in
+                Button {
+                    withAnimation(Motion.micro) {
+                        selectedPanel = panel
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: panel.icon)
+                            .font(.system(size: 10.5, weight: .semibold))
+                        Text(panel.rawValue)
+                            .font(.system(size: 10.5, weight: .semibold))
+                    }
+                    .foregroundStyle(selectedPanel == panel ? .white.opacity(0.88) : .white.opacity(0.42))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(selectedPanel == panel ? Color.white.opacity(0.09) : Color.clear)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.black.opacity(0.16))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                )
+        )
+    }
+
+    @ViewBuilder
+    private var selectedPanelContent: some View {
+        if pointCount < 2 {
+            loadingInspectorCard
+            watchlistCard
+        } else {
+            switch selectedPanel {
+            case .summary:
+                snapshotCard
+                modelSignalsCard
+                watchlistCard
+            case .flow:
+                orderFlowCard
+                priceStructureCard
+            case .risk:
+                momentumTrendCard
+                riskMapCard
+            }
+        }
+    }
+
+    private var loadingInspectorCard: some View {
+        card(tint: Color(red: 0.13, green: 0.18, blue: 0.22)) {
+            sectionHeader("SYNC")
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Loading \(displaySymbol)")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.84))
+
+                Text("Cleared the previous instrument and waiting for fresh samples.")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.44))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var snapshotCard: some View {
+        card(tint: Color(red: 0.15, green: 0.19, blue: 0.20)) {
+            sectionHeader("MARKET SNAPSHOT")
+
+            gridMetrics([
+                ("Change", signedAbsoluteText),
+                ("Change %", signedPercentText),
+                ("High", number(highValue)),
+                ("Low", number(lowValue)),
+                ("Median", number(medianPrice)),
+                ("VWAP*", number(vwapProxy)),
+                ("Z-Score", signedNumber(zScore)),
+                ("Window", "\(windowHours.formatted(.number.precision(.fractionLength(1))))h")
+            ])
+
+            structureBar(
+                label: "Range Position",
+                leftCaption: "Low \(distanceFromLowPercent.formatted(.number.precision(.fractionLength(0))))%",
+                rightCaption: "High \(distanceToHighPercent.formatted(.number.precision(.fractionLength(0))))%",
+                value: percentileInRange
+            )
+        }
+    }
+
+    private var orderFlowCard: some View {
+        card(tint: Color(red: 0.13, green: 0.20, blue: 0.28)) {
+            sectionHeader("BUYING VS SELLING")
+
+            HStack(alignment: .firstTextBaseline) {
+                Text("Buy/Sell Pressure")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.56))
+                Spacer()
+                Text("\(imbalancePercent >= 0 ? "+" : "")\(imbalancePercent.formatted(.number.precision(.fractionLength(1))))%")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(imbalancePercent >= 0 ? Color(red: 0.58, green: 0.84, blue: 0.73) : Color(red: 0.88, green: 0.58, blue: 0.58))
+                    .monospacedDigit()
+            }
+            .hoverInsight(
+                InspectorInsight(
+                    title: "Buy/Sell Pressure",
+                    meaning: "Net directional pressure from buying versus selling activity.",
+                    expectedRange: "Normal rotational regimes often stay within -12% to +12%.",
+                    action: "If imbalance persists above +/-20%, favor trend setups until momentum deteriorates."
+                )
+            )
+
+            SparklineArea(data: pulseSeries, color: Color(red: 0.64, green: 0.86, blue: 0.78))
+                .frame(height: 44)
+                .hoverInsight(
+                    InspectorInsight(
+                        title: "Trading Activity",
+                        meaning: "Short-horizon shape of demand/supply acceleration.",
+                        expectedRange: "Smooth undulations indicate stable participation; abrupt spikes imply event-driven activity.",
+                        action: "When pulses become erratic, reduce sizing and wait for confirmation candles."
+                    )
+                )
+
+            VStack(spacing: 8) {
+                ForEach(Array(depthSeries.enumerated()), id: \.offset) { index, value in
+                    depthRow(
+                        label: "L\(index + 1)",
+                        bid: value,
+                        ask: (1 - value).clamped(to: 0.08...0.92)
+                    )
+                }
+            }
+        }
+    }
+
+    private var priceStructureCard: some View {
+        card(tint: Color(red: 0.16, green: 0.14, blue: 0.24)) {
+            sectionHeader("PRICE STRUCTURE")
+
+            priceStructureTrack()
+                .frame(height: 56)
+                .hoverInsight(
+                    InspectorInsight(
+                        title: "Price Structure Track",
+                        meaning: "Shows current price, VWAP proxy, and median position inside the active high-low range.",
+                        expectedRange: "In balanced markets, last price often rotates around VWAP/median instead of hugging extremes.",
+                        action: "If last price pins at an edge while VWAP lags, favor continuation. If it snaps back to VWAP, fade extension."
+                    )
+                )
+
+            HStack(spacing: 8) {
+                structureChip("Range", number(highValue - lowValue), tone: Color(red: 0.70, green: 0.80, blue: 0.93))
+                structureChip("VWAP Drift", signedPercent(vwapDriftPercent), tone: vwapDriftPercent >= 0 ? Color(red: 0.58, green: 0.84, blue: 0.74) : Color(red: 0.86, green: 0.60, blue: 0.60))
+                structureChip("Z-Score", signedNumber(zScore), tone: abs(zScore) < 1.5 ? Color(red: 0.69, green: 0.78, blue: 0.93) : Color(red: 0.87, green: 0.67, blue: 0.57))
+            }
+
+            structureBar(
+                label: "Range Position",
+                leftCaption: "Low \(distanceFromLowPercent.formatted(.number.precision(.fractionLength(0))))%",
+                rightCaption: "High \(distanceToHighPercent.formatted(.number.precision(.fractionLength(0))))%",
+                value: percentileInRange
+            )
+            .hoverInsight(
+                InspectorInsight(
+                    title: "Range Position",
+                    meaning: "Relative location of price between window low and high.",
+                    expectedRange: "Middle zone 35-65% usually indicates rotational behavior.",
+                    action: "Persistent >80% or <20% suggests directional pressure; switch from mean-reversion to trend tactics."
+                )
+            )
+
+            structureBar(
+                label: "Mean Reversion Gap",
+                leftCaption: "Median \(signedPercent(medianDriftPercent))",
+                rightCaption: "VWAP \(signedPercent(vwapDriftPercent))",
+                value: ((vwapDriftPercent + 8) / 16).clamped(to: 0...1)
+            )
+            .hoverInsight(
+                InspectorInsight(
+                    title: "Reversion Gap",
+                    meaning: "Distance between current price and central anchors (median and VWAP).",
+                    expectedRange: "Small gaps indicate equilibrium; large sustained gaps imply directional expansion.",
+                    action: "If both drifts widen with strong participation, favor continuation. If participation weakens, prepare for snapback."
+                )
+            )
+        }
+    }
+
+    private var modelSignalsCard: some View {
+        card(tint: Color(red: 0.14, green: 0.22, blue: 0.20)) {
+            sectionHeader("MODEL SIGNALS")
+            signalBar("Participation", value: flowScore, color: Color(red: 0.54, green: 0.78, blue: 0.68))
+                .hoverInsight(
+                    InspectorInsight(
+                        title: "Participation Score",
+                        meaning: "Directional participation intensity after normalization.",
+                        expectedRange: "Typical neutral range: 40 to 60.",
+                        action: "Above 65 supports continuation. Below 35 favors defensive or mean-reversion posture."
+                    )
+                )
+            signalBar("Stress", value: stressScore, color: Color(red: 0.78, green: 0.60, blue: 0.48))
+                .hoverInsight(
+                    InspectorInsight(
+                        title: "Stress Score",
+                        meaning: "Compression between volatility and directional conviction.",
+                        expectedRange: "Most stable regimes hold below 55.",
+                        action: "Above 70, reduce leverage and widen slippage assumptions."
+                    )
+                )
+            signalBar("Noise", value: noiseScore, color: Color(red: 0.56, green: 0.66, blue: 0.78))
+                .hoverInsight(
+                    InspectorInsight(
+                        title: "Noise Score",
+                        meaning: "Choppiness ratio of movement that does not contribute to net trend.",
+                        expectedRange: "Efficient trends often remain under 40.",
+                        action: "Above 55, avoid breakout entries unless confirmed by volume expansion."
+                    )
+                )
+            signalBar("Confidence", value: confidenceScore, color: Color(red: 0.68, green: 0.76, blue: 0.94))
+                .hoverInsight(
+                    InspectorInsight(
+                        title: "Confidence Score",
+                        meaning: "Composite certainty from participation quality, volatility and noise.",
+                        expectedRange: "Actionable zone is usually above 55.",
+                        action: "Below 45, prefer smaller position sizes and wait for structure confirmation."
+                    )
+                )
+        }
+    }
+
+    private var momentumTrendCard: some View {
+        card(tint: Color(red: 0.13, green: 0.18, blue: 0.27)) {
+            sectionHeader("MOMENTUM & TREND")
+            gridMetrics([
+                ("Mean Ret", signedPercent(averageReturn * 100)),
+                ("Median Ret", signedPercent(medianReturn * 100)),
+                ("Ret Vol", "\(realizedVolPercent.formatted(.number.precision(.fractionLength(2))))%"),
+                ("Down Dev", "\(downsideDeviationPercent.formatted(.number.precision(.fractionLength(2))))%"),
+                ("Avg Move", "\(averageCandleMovePercent.formatted(.number.precision(.fractionLength(2))))%"),
+                ("Slope", signedPercent(trendSlopePercentPerStep)),
+                ("Efficiency", "\(Int(efficiencyRatio * 100))"),
+                ("Trend", trendQuality),
+                ("Drawdown", "\(maxDrawdownPercent.formatted(.number.precision(.fractionLength(2))))%"),
+                ("Recovery", "\(recoveryPercentFromLow.formatted(.number.precision(.fractionLength(2))))%"),
+                ("Sortino*", signedNumber(sortinoLike))
+            ])
+        }
+    }
+
+    private var riskMapCard: some View {
+        card(tint: Color(red: 0.22, green: 0.16, blue: 0.18)) {
+            sectionHeader("RISK MAP")
+            gridMetrics([
+                ("Bias", isUp ? "Bullish Drift" : "Risk-off"),
+                ("Regime", volatilityPercent > 4.5 ? "Elevated" : "Stable"),
+                ("Pressure", "\(Int(abs(pressureScore) * 100))"),
+                ("Imbalance", signedPercent(imbalancePercent)),
+                ("Net Vol", compactVolume(volumeDelta)),
+                ("State", marketState),
+                ("Timeframe", selectedRange.rawValue),
+                ("Window", "\(windowHours.formatted(.number.precision(.fractionLength(1))))h"),
+                ("Cadence", "\(sampleCadenceMinutes.formatted(.number.precision(.fractionLength(1))))m"),
+                ("Liquidity", Int(liquidityProxy).formatted()),
+                ("Sharpe*", signedNumber(averageReturn / max(returnStdDev, 0.0001))),
+                ("VaR 95*", "\(var95Percent.formatted(.number.precision(.fractionLength(2))))%"),
+                ("CVaR 95*", "\(cvar95Percent.formatted(.number.precision(.fractionLength(2))))%")
+            ])
+        }
     }
 
     private var watchlistCard: some View {
@@ -2436,22 +3912,26 @@ private struct MarketInspector: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.03),
-                            tint.opacity(0.16),
-                            Color.black.opacity(0.08)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(red: 0.095, green: 0.102, blue: 0.118).opacity(0.82))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.white.opacity(0.075), lineWidth: 1)
                 )
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(tint.opacity(0.62))
+                        .frame(height: 2)
+                        .clipShape(
+                            UnevenRoundedRectangle(
+                                topLeadingRadius: 8,
+                                bottomLeadingRadius: 0,
+                                bottomTrailingRadius: 0,
+                                topTrailingRadius: 8,
+                                style: .continuous
+                            )
+                        )
+                }
         )
     }
 
@@ -2478,11 +3958,11 @@ private struct MarketInspector: View {
                 expectedRange: "Low-vol regimes typically stay compressed while high-vol regimes expand rapidly.",
                 action: "When vol spikes, lower leverage and widen execution tolerance."
             )
-        case "Flow", "Imbalance", "Pressure":
+        case "Participation", "Buy/Sell Pressure", "Pressure":
             return InspectorInsight(
                 title: "Order Pressure",
                 meaning: "Directional participation and dominance between buy and sell activity.",
-                expectedRange: "Balanced tape usually lives near neutral; persistent extremes imply one-way flow.",
+                expectedRange: "Balanced activity usually lives near neutral; persistent extremes imply one-way pressure.",
                 action: "Use sustained extremes for continuation setups, fading only after momentum decay."
             )
         case "VaR 95*", "CVaR 95*":
@@ -2497,7 +3977,7 @@ private struct MarketInspector: View {
                 title: "Standardized Distance",
                 meaning: "How far price is from its local mean measured in standard deviations.",
                 expectedRange: "Most observations remain within -2 to +2.",
-                action: "Outside +/-2, prepare for either continuation breakout or snapback depending on flow."
+                action: "Outside +/-2, prepare for either continuation breakout or snapback depending on participation."
             )
         case "Liquidity":
             return InspectorInsight(
@@ -2792,10 +4272,144 @@ private enum ChartRange: String, CaseIterable, Identifiable {
     }
 }
 
+private enum ForesightRange: String, CaseIterable, Identifiable, Equatable {
+    case off = "Off"
+    case fifteenMinutes = "15m"
+    case thirtyMinutes = "30m"
+    case hour = "1H"
+
+    var id: String { rawValue }
+
+    var duration: TimeInterval {
+        switch self {
+        case .off:
+            return 0
+        case .fifteenMinutes:
+            return 15 * 60
+        case .thirtyMinutes:
+            return 30 * 60
+        case .hour:
+            return 60 * 60
+        }
+    }
+}
+
+private enum ForesightIndicator: String, Identifiable, Hashable {
+    case sma20 = "SMA 20"
+    case sma50 = "SMA 50"
+    case ema20 = "EMA 20"
+    case ema50 = "EMA 50"
+    case vwap = "VWAP"
+    case bollingerBands = "Bollinger Bands"
+    case donchianChannel = "Donchian"
+    case keltnerChannel = "Keltner"
+    case bollingerMid = "Bollinger Mid"
+    case bollingerUpper = "Bollinger Upper"
+    case bollingerLower = "Bollinger Lower"
+    case donchianUpper = "Donchian Upper"
+    case donchianLower = "Donchian Lower"
+    case keltnerMid = "Keltner Mid"
+    case keltnerUpper = "Keltner Upper"
+    case keltnerLower = "Keltner Lower"
+
+    var id: String { rawValue }
+
+    static let menuCases: [ForesightIndicator] = [
+        .sma20,
+        .sma50,
+        .ema20,
+        .ema50,
+        .vwap,
+        .bollingerBands,
+        .donchianChannel,
+        .keltnerChannel
+    ]
+
+    var menuTitle: String {
+        switch self {
+        case .sma20, .sma50, .ema20, .ema50, .vwap, .bollingerBands, .donchianChannel, .keltnerChannel:
+            return rawValue
+        case .bollingerMid, .bollingerUpper, .bollingerLower, .donchianUpper, .donchianLower, .keltnerMid, .keltnerUpper, .keltnerLower:
+            return "Hidden"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .sma20:
+            return Color(red: 0.71, green: 0.88, blue: 0.62).opacity(0.84)
+        case .sma50:
+            return Color(red: 0.54, green: 0.82, blue: 0.90).opacity(0.82)
+        case .ema20:
+            return Color(red: 0.95, green: 0.84, blue: 0.53).opacity(0.88)
+        case .ema50:
+            return Color(red: 0.89, green: 0.63, blue: 0.57).opacity(0.82)
+        case .vwap:
+            return Color(red: 0.90, green: 0.72, blue: 0.55).opacity(0.82)
+        case .bollingerBands:
+            return Color(red: 0.80, green: 0.70, blue: 0.88).opacity(0.75)
+        case .donchianChannel:
+            return Color(red: 0.63, green: 0.86, blue: 0.82).opacity(0.78)
+        case .keltnerChannel:
+            return Color(red: 0.93, green: 0.76, blue: 0.58).opacity(0.78)
+        case .bollingerMid:
+            return Color(red: 0.88, green: 0.80, blue: 0.94).opacity(0.62)
+        case .bollingerUpper, .bollingerLower:
+            return Color(red: 0.72, green: 0.64, blue: 0.82).opacity(0.56)
+        case .donchianUpper, .donchianLower:
+            return Color(red: 0.63, green: 0.86, blue: 0.82).opacity(0.62)
+        case .keltnerMid:
+            return Color(red: 0.97, green: 0.84, blue: 0.62).opacity(0.66)
+        case .keltnerUpper, .keltnerLower:
+            return Color(red: 0.93, green: 0.76, blue: 0.58).opacity(0.58)
+        }
+    }
+
+    var lineWidth: CGFloat {
+        switch self {
+        case .sma20, .sma50, .ema20, .ema50, .vwap:
+            return 1.35
+        case .bollingerBands, .bollingerMid, .bollingerUpper, .bollingerLower, .donchianChannel, .donchianUpper, .donchianLower, .keltnerChannel, .keltnerMid, .keltnerUpper, .keltnerLower:
+            return 1.0
+        }
+    }
+}
+
+private enum ForesightIndicatorGroup: String, CaseIterable, Identifiable {
+    case trend
+    case priceStructure
+    case volatility
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .trend:
+            return "TREND"
+        case .priceStructure:
+            return "PRICE"
+        case .volatility:
+            return "VOLATILITY"
+        }
+    }
+
+    var indicators: [ForesightIndicator] {
+        switch self {
+        case .trend:
+            return [.sma20, .sma50, .ema20, .ema50]
+        case .priceStructure:
+            return [.vwap, .donchianChannel]
+        case .volatility:
+            return [.bollingerBands, .keltnerChannel]
+        }
+    }
+}
+
 private struct GraphPoint: Identifiable {
     let index: Int
     let date: Date
     let value: Double
+    let volume: Double?
 
     var id: TimeInterval { date.timeIntervalSince1970 }
 }

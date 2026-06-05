@@ -107,17 +107,25 @@ final class AeviumMarketViewModel: ObservableObject {
 
         guard query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 else {
             searchResults = []
+            isSearching = false
+            errorMessage = nil
             return
         }
+
+        searchResults = []
+        isSearching = true
+        errorMessage = nil
 
         searchTask = Task { [weak self] in
             guard let self else { return }
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard !Task.isCancelled else { return }
 
-            await MainActor.run { self.isSearching = true }
             do {
-                guard let engine = await MainActor.run(body: { self.engine }) else { return }
+                guard let engine = await MainActor.run(body: { self.engine }) else {
+                    await MainActor.run { self.isSearching = false }
+                    return
+                }
                 let results = try await engine.searchInstruments(query: query)
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
@@ -158,9 +166,11 @@ final class AeviumMarketViewModel: ObservableObject {
     }
 
     func selectInstrument(_ instrument: InstrumentMetadata) {
+        searchTask?.cancel()
         selectedInstrument = instrument
         searchQuery = instrument.compactTitle
         searchResults = []
+        isSearching = false
         syncState = .idle(for: instrument.id)
         errorMessage = nil
         resetSeries()
@@ -177,6 +187,7 @@ final class AeviumMarketViewModel: ObservableObject {
         guard let engine else { return }
         let instrument = selectedInstrument
         let viewport = MarketViewport(range: selectedRange)
+        let generation = processingGeneration
 
         streamTask = Task { [weak self] in
             guard let self else { return }
@@ -197,6 +208,9 @@ final class AeviumMarketViewModel: ObservableObject {
                             || update.errorMessage != nil)
 
                     await MainActor.run {
+                        guard self.processingGeneration == generation else { return }
+                        guard self.selectedInstrument.id == instrument.id else { return }
+
                         self.selectedInstrument = update.instrument
                         self.enqueueSeriesUpdate(
                             points: update.points,
@@ -212,6 +226,9 @@ final class AeviumMarketViewModel: ObservableObject {
                 }
             } catch {
                 await MainActor.run {
+                    guard self.processingGeneration == generation else { return }
+                    guard self.selectedInstrument.id == instrument.id else { return }
+
                     self.errorMessage = error.localizedDescription
                     self.completeStartupIfNeeded(failed: true)
                     self.syncState = SyncState(
@@ -263,9 +280,8 @@ final class AeviumMarketViewModel: ObservableObject {
         }
 
         while !Task.isCancelled, processingGeneration == generation {
-            guard !pendingSeriesUpdates.isEmpty else { return }
+            guard let update = nextSeriesUpdate() else { return }
 
-            let update = pendingSeriesUpdates.removeFirst()
             if update.completesStartup {
                 completeStartupIfNeeded()
             }
@@ -306,6 +322,27 @@ final class AeviumMarketViewModel: ObservableObject {
                 startupState = .ready
             }
         }
+    }
+
+    private func nextSeriesUpdate() -> PendingSeriesUpdate? {
+        guard let latest = pendingSeriesUpdates.last else { return nil }
+
+        let completesStartup = pendingSeriesUpdates.contains { $0.completesStartup }
+        pendingSeriesUpdates.removeAll(keepingCapacity: true)
+
+        guard completesStartup != latest.completesStartup else {
+            return latest
+        }
+
+        return PendingSeriesUpdate(
+            points: latest.points,
+            state: latest.state,
+            range: latest.range,
+            cap: latest.cap,
+            fromTimestamp: latest.fromTimestamp,
+            stableBucketSeconds: latest.stableBucketSeconds,
+            completesStartup: completesStartup
+        )
     }
 
     private func completeStartupIfNeeded(failed: Bool = false) {

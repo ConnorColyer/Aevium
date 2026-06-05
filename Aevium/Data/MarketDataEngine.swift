@@ -56,13 +56,16 @@ actor MarketDataEngine {
 
     func topMovers(limit: Int = 80) async throws -> [MarketMover] {
         let tickers = try await httpClient.twentyFourHourTickers()
-        let directory = (try? await symbolDirectory()) ?? []
+        let directory = try await symbolDirectory()
         let recordsBySymbol = Dictionary(uniqueKeysWithValues: directory.map { ($0.symbol, $0) })
 
         let movers = tickers.compactMap { ticker -> MarketMover? in
             guard
                 ticker.symbol.hasSuffix("USDT"),
                 !Self.excludedSymbolFragments.contains(where: ticker.symbol.contains),
+                let record = recordsBySymbol[ticker.symbol],
+                record.status == "TRADING",
+                record.isSpotTradingAllowed,
                 let lastPrice = Double(ticker.lastPrice),
                 let priceChange = Double(ticker.priceChange),
                 let percentChange = Double(ticker.priceChangePercent),
@@ -76,11 +79,8 @@ actor MarketDataEngine {
                 return nil
             }
 
-            let instrument = recordsBySymbol[ticker.symbol]?.instrument
-                ?? Self.fallbackInstrument(for: ticker.symbol)
-
             return MarketMover(
-                instrument: instrument,
+                instrument: record.instrument,
                 lastPrice: lastPrice,
                 priceChange: priceChange,
                 percentChange: percentChange,
