@@ -1,8 +1,5 @@
 # Aevium
 
-dont open source ts alex 🙏 
-sending to the main man - alex
-
 ## Project notes
 
 - Main app entry: `Aevium/App/AeviumApp.swift`
