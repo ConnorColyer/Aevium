@@ -43,13 +43,14 @@ jobs:
           TOOLS_DIR="$(./scripts/download_sparkle_tools.sh "$SPARKLE_VERSION" "$RUNNER_TEMP/sparkle-tools")"
           echo "AEVIUM_SPARKLE_TOOLS_DIR=$TOOLS_DIR" >> "$GITHUB_ENV"
 
-      - name: Import Sparkle private key
+      - name: Prepare Sparkle private key
         env:
           SPARKLE_PRIVATE_KEY_BASE64: ${{ secrets.SPARKLE_PRIVATE_KEY_BASE64 }}
         run: |
           SPARKLE_KEY_PATH="$RUNNER_TEMP/sparkle-private-key"
           echo -n "$SPARKLE_PRIVATE_KEY_BASE64" | base64 --decode > "$SPARKLE_KEY_PATH"
-          "$("./scripts/sparkle_tool.sh" generate_keys)" -f "$SPARKLE_KEY_PATH"
+          chmod 600 "$SPARKLE_KEY_PATH"
+          echo "AEVIUM_SPARKLE_PRIVATE_KEY_PATH=$SPARKLE_KEY_PATH" >> "$GITHUB_ENV"
 
       - name: Build unsigned release app
         run: |

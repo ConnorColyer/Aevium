@@ -40,7 +40,17 @@ if [[ -z "$build_version" ]]; then
 fi
 
 sign_update_tool="$(./scripts/sparkle_tool.sh sign_update)"
-signature_fragment="$("$sign_update_tool" "$archive_path")"
+sign_update_args=()
+if [[ -n "${AEVIUM_SPARKLE_PRIVATE_KEY_PATH:-}" ]]; then
+  if [[ ! -f "${AEVIUM_SPARKLE_PRIVATE_KEY_PATH}" ]]; then
+    echo "Missing Sparkle private key at ${AEVIUM_SPARKLE_PRIVATE_KEY_PATH}"
+    exit 1
+  fi
+
+  sign_update_args+=(--ed-key-file "${AEVIUM_SPARKLE_PRIVATE_KEY_PATH}")
+fi
+
+signature_fragment="$("$sign_update_tool" "${sign_update_args[@]}" "$archive_path")"
 release_page_url="https://github.com/${repo_slug}/releases/tag/v${version}"
 download_url="https://github.com/${repo_slug}/releases/download/v${version}/$(basename "$archive_path")"
 pub_date="$(LC_ALL=C date -u +"%a, %d %b %Y %H:%M:%S +0000")"
