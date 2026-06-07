@@ -26,6 +26,7 @@
 		8B7F92E781E1EF8C0CFB025B /* BinanceProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54CE646B60AE8BA8C246681E /* BinanceProvider.swift */; };
 		8F03156170DBEC2C7FA183B5 /* BinanceMarketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3EA1BEBE25D0F1928D4C3D8 /* BinanceMarketClient.swift */; };
 		93B76A8CFB110CB4C3B36F96 /* FinnhubStockProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870A19F876F21F5204C848C2 /* FinnhubStockProvider.swift */; };
+		9C3F4A65D6E7498AA1B2C3D4 /* YahooStockProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8E9F001B2C34567D8E9F012 /* YahooStockProvider.swift */; };
 		A6B80E1A2418D43A72C0A75F /* AeviumApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 390053607A7FAEC5EC43B0E8 /* AeviumApp.swift */; };
 		A7093F81EEE15229A78532C1 /* MarketDataEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9395CD855823C5C19B991A4D /* MarketDataEngine.swift */; };
 		B21B07FD097D2B0F49382510 /* rateLimit.json in Resources */ = {isa = PBXBuildFile; fileRef = 5ADC35B50FFEA2A5127E8DC5 /* rateLimit.json */; };
@@ -75,6 +76,7 @@
 		870A19F876F21F5204C848C2 /* FinnhubStockProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FinnhubStockProvider.swift; path = Aevium/Data/FinnhubStockProvider.swift; sourceTree = "<group>"; };
 		87EF04A6B0DA64FD41877D12 /* MarketDataProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MarketDataProvider.swift; path = Aevium/Data/MarketDataProvider.swift; sourceTree = "<group>"; };
 		9395CD855823C5C19B991A4D /* MarketDataEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MarketDataEngine.swift; path = Aevium/Data/MarketDataEngine.swift; sourceTree = "<group>"; };
+		A8E9F001B2C34567D8E9F012 /* YahooStockProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = YahooStockProvider.swift; path = Aevium/Data/YahooStockProvider.swift; sourceTree = "<group>"; };
 		B3EA1BEBE25D0F1928D4C3D8 /* BinanceMarketClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BinanceMarketClient.swift; path = Aevium/Data/BinanceMarketClient.swift; sourceTree = "<group>"; };
 		BF129EF5E034274395530206 /* BackfillService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BackfillService.swift; path = Aevium/Data/BackfillService.swift; sourceTree = "<group>"; };
 		C669E3880A431C0B6092F213 /* CryptoBackendTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CryptoBackendTests.swift; path = AeviumTests/CryptoBackendTests.swift; sourceTree = "<group>"; };
@@ -128,6 +130,7 @@
 				D2ADAB62EE0E9B33BB81557B /* CryptoMarketDataModels.swift */,
 				843D7780C3C77FB022EE96EC /* CryptoMarketDataStore.swift */,
 				870A19F876F21F5204C848C2 /* FinnhubStockProvider.swift */,
+				A8E9F001B2C34567D8E9F012 /* YahooStockProvider.swift */,
 				F70D6B88B3190C09DA55A826 /* LiveIngestionService.swift */,
 				9395CD855823C5C19B991A4D /* MarketDataEngine.swift */,
 				CE2A27C98951117C69609AC3 /* MarketDataModels.swift */,
@@ -291,6 +294,7 @@
 				2E9757FC54C2ABF0523AC314 /* CryptoMarketDataModels.swift in Sources */,
 				DE44277ED621EF14B3064726 /* CryptoMarketDataStore.swift in Sources */,
 				93B76A8CFB110CB4C3B36F96 /* FinnhubStockProvider.swift in Sources */,
+				9C3F4A65D6E7498AA1B2C3D4 /* YahooStockProvider.swift in Sources */,
 				ECCDB92140516541DC38DDBB /* LiveIngestionService.swift in Sources */,
 				A7093F81EEE15229A78532C1 /* MarketDataEngine.swift in Sources */,
 				FA1C26DB1051224E52D0166C /* MarketDataModels.swift in Sources */,

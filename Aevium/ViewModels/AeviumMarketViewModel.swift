@@ -36,6 +36,7 @@ final class AeviumMarketViewModel: ObservableObject {
         let points: [LinePoint]
         let state: SyncState
         let range: MarketTimeRange
+        let instrumentType: InstrumentType
         let cap: Int
         let fromTimestamp: Int64
         let stableBucketSeconds: Int
@@ -216,9 +217,16 @@ final class AeviumMarketViewModel: ObservableObject {
                             points: update.points,
                             state: update.state,
                             range: update.viewport.range,
-                            cap: update.viewport.chartPointTarget,
+                            instrumentType: update.instrument.id.type,
+                            cap: Self.chartPointCap(
+                                for: update.viewport,
+                                instrumentType: update.instrument.id.type
+                            ),
                             fromTimestamp: update.viewport.fromTimestamp,
-                            stableBucketSeconds: Self.stableBucketSeconds(for: update.viewport),
+                            stableBucketSeconds: Self.stableBucketSeconds(
+                                for: update.viewport,
+                                instrumentType: update.instrument.id.type
+                            ),
                             completesStartup: completesStartup
                         )
                         self.errorMessage = update.errorMessage
@@ -247,6 +255,7 @@ final class AeviumMarketViewModel: ObservableObject {
         points incoming: [LinePoint],
         state: SyncState,
         range: MarketTimeRange,
+        instrumentType: InstrumentType,
         cap: Int,
         fromTimestamp: Int64,
         stableBucketSeconds: Int,
@@ -257,6 +266,7 @@ final class AeviumMarketViewModel: ObservableObject {
                 points: incoming,
                 state: state,
                 range: range,
+                instrumentType: instrumentType,
                 cap: cap,
                 fromTimestamp: fromTimestamp,
                 stableBucketSeconds: stableBucketSeconds,
@@ -287,8 +297,15 @@ final class AeviumMarketViewModel: ObservableObject {
             }
             syncState = update.state
 
-            let visibleExisting = points.filter { $0.timestamp >= update.fromTimestamp }
-            let visibleIncoming = update.points.filter { $0.timestamp >= update.fromTimestamp }
+            let visibleExisting: [LinePoint]
+            let visibleIncoming: [LinePoint]
+            if update.instrumentType == .equity {
+                visibleExisting = points
+                visibleIncoming = update.points
+            } else {
+                visibleExisting = points.filter { $0.timestamp >= update.fromTimestamp }
+                visibleIncoming = update.points.filter { $0.timestamp >= update.fromTimestamp }
+            }
 
             guard !visibleIncoming.isEmpty else {
                 if displayedRange == update.range, visibleExisting.count != points.count {
@@ -338,6 +355,7 @@ final class AeviumMarketViewModel: ObservableObject {
             points: latest.points,
             state: latest.state,
             range: latest.range,
+            instrumentType: latest.instrumentType,
             cap: latest.cap,
             fromTimestamp: latest.fromTimestamp,
             stableBucketSeconds: latest.stableBucketSeconds,
@@ -358,7 +376,26 @@ final class AeviumMarketViewModel: ObservableObject {
         isRangeTransitioning = false
     }
 
-    private static func stableBucketSeconds(for viewport: MarketViewport) -> Int {
+    private static func chartPointCap(
+        for viewport: MarketViewport,
+        instrumentType: InstrumentType
+    ) -> Int {
+        switch instrumentType {
+        case .crypto:
+            return viewport.chartPointTarget
+        case .equity:
+            return max(viewport.chartPointTarget, min(viewport.historicalFetchLimit, 6_000))
+        }
+    }
+
+    private static func stableBucketSeconds(
+        for viewport: MarketViewport,
+        instrumentType: InstrumentType
+    ) -> Int {
+        if instrumentType == .equity {
+            return viewport.resolution.seconds
+        }
+
         let bucketCount = max(1, viewport.chartPointTarget / 4)
         return max(1, Int(ceil(viewport.range.duration / Double(bucketCount))))
     }

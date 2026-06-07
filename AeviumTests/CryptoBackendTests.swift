@@ -118,11 +118,79 @@ final class CryptoBackendTests: XCTestCase {
         XCTAssertTrue(webSocketClient.streamTerminated)
     }
 
+    func testEquityInstrumentUsesStockProviderInsteadOfBinance() async throws {
+        let store = try CryptoMarketDataStore(databaseURL: temporaryDatabaseURL())
+        let stockProvider = FixtureStockProvider()
+        let webSocketClient = FixtureWebSocketClient(candles: [])
+        let engine = MarketDataEngine(
+            store: store,
+            httpClient: FixtureHTTPClient(klines: []),
+            webSocketClient: webSocketClient,
+            router: FixtureMarketRouter(stockProvider: stockProvider)
+        )
+
+        let stream = await engine.observeSeries(
+            instrument: FixtureStockProvider.apple,
+            viewport: MarketViewport(range: .hour, resolution: .oneMinute)
+        )
+
+        let updates = try await collectFirst(5, from: stream)
+        XCTAssertEqual(updates[0].instrument.id.type, .equity)
+        XCTAssertEqual(updates[2].instrument.id.symbol, "AAPL")
+        XCTAssertEqual(updates[2].points.last?.price, 103)
+        XCTAssertEqual(updates[4].points.last?.price, 104)
+        XCTAssertFalse(webSocketClient.streamTerminated)
+    }
+
+    func testEquityShortWindowKeepsMostRecentTradingSamples() async throws {
+        let store = try CryptoMarketDataStore(databaseURL: temporaryDatabaseURL())
+        let stockProvider = PreviousSessionStockProvider()
+        let engine = MarketDataEngine(
+            store: store,
+            httpClient: FixtureHTTPClient(klines: []),
+            webSocketClient: FixtureWebSocketClient(candles: []),
+            router: FixtureMarketRouter(stockProvider: stockProvider)
+        )
+
+        let stream = await engine.observeSeries(
+            instrument: PreviousSessionStockProvider.apple,
+            viewport: MarketViewport(range: .twentyFiveMinutes, resolution: .oneMinute)
+        )
+
+        let updates = try await collectFirst(4, from: stream)
+        XCTAssertEqual(updates[2].state.state, .connected)
+        XCTAssertEqual(updates[2].points.map(\.price), [198, 199, 200])
+        XCTAssertLessThan(updates[2].points.last?.timestamp ?? 0, MarketViewport(range: .twentyFiveMinutes).fromTimestamp)
+        XCTAssertEqual(updates[3].points.map(\.price), [198, 199, 200])
+    }
+
+    func testCompositeStockProviderFallsBackWhenPrimaryRejectsHistory() async throws {
+        let provider = CompositeStockProvider(
+            primary: RejectingStockProvider(),
+            fallback: FixtureStockProvider()
+        )
+
+        let results = try await provider.searchInstruments(query: "AAPL")
+        XCTAssertEqual(results.first?.id.symbol, "AAPL")
+
+        let latest = try await provider.latestQuote(for: FixtureStockProvider.apple)
+        XCTAssertEqual(latest.price, 103)
+
+        let history = try await provider.historicalPoints(
+            for: FixtureStockProvider.apple,
+            from: Date().addingTimeInterval(-3_600),
+            to: Date(),
+            resolution: .oneMinute,
+            maxPoints: 10
+        )
+        XCTAssertEqual(history.map(\.price), [101, 102])
+    }
+
     func testInvalidSymbolAndRateLimitFixturesMapToErrors() async throws {
         let engine = try makeEngine()
 
         do {
-            _ = try await engine.resolveInstrument(query: "NOPE")
+            _ = try await engine.resolveInstrument(query: "NOPEUSDT")
             XCTFail("Expected invalid symbol to throw")
         } catch {
             XCTAssertTrue(error.localizedDescription.contains("No Binance symbol"))
@@ -255,6 +323,215 @@ private final class FixtureWebSocketClient: @unchecked Sendable, BinanceWebSocke
                 }
             }
         }
+    }
+}
+
+private struct FixtureMarketRouter: MarketDataRouting {
+    let stockProvider: any MarketDataProvider
+
+    func provider(for instrument: InstrumentMetadata) throws -> any MarketDataProvider {
+        switch instrument.id.type {
+        case .crypto:
+            throw ProviderError.unsupportedInstrument
+        case .equity:
+            return stockProvider
+        }
+    }
+
+    func searchEquities(query: String) async throws -> [InstrumentMetadata] {
+        try await stockProvider.searchInstruments(query: query)
+    }
+
+    func resolveEquity(query: String) async throws -> InstrumentMetadata {
+        let results = try await searchEquities(query: query)
+        guard let first = results.first else {
+            throw ProviderError.emptyResponse(provider: stockProvider.id)
+        }
+        return first
+    }
+}
+
+private final class PreviousSessionStockProvider: @unchecked Sendable, MarketDataProvider {
+    let id = "previous-session-stocks"
+    let supportedType: InstrumentType = .equity
+
+    static let apple = InstrumentMetadata(
+        id: InstrumentID(type: .equity, symbol: "AAPL"),
+        displaySymbol: "AAPL",
+        name: "Apple Inc.",
+        exchange: "NASDAQ",
+        currency: "USD",
+        provider: "previous-session-stocks",
+        session: "Market hours"
+    )
+
+    private let baseTimestamp = (Int64(Date().addingTimeInterval(-7_200).timeIntervalSince1970) / 60) * 60
+
+    func searchInstruments(query: String) async throws -> [InstrumentMetadata] {
+        query.uppercased().contains("AAPL") ? [Self.apple] : []
+    }
+
+    func latestQuote(for instrument: InstrumentMetadata) async throws -> LinePoint {
+        LinePoint(
+            instrumentID: instrument.id,
+            timestamp: baseTimestamp + 120,
+            price: 200,
+            volume: 1_200,
+            source: id,
+            quality: .delayed,
+            resolutionSeconds: SeriesResolution.oneMinute.seconds
+        )
+    }
+
+    func liveQuotes(for instrument: InstrumentMetadata) -> AsyncThrowingStream<LinePoint, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    func historicalPoints(
+        for instrument: InstrumentMetadata,
+        from: Date,
+        to: Date,
+        resolution: SeriesResolution,
+        maxPoints: Int
+    ) async throws -> [LinePoint] {
+        [
+            LinePoint(
+                instrumentID: instrument.id,
+                timestamp: baseTimestamp,
+                price: 198,
+                volume: 900,
+                source: id,
+                quality: .backfill,
+                resolutionSeconds: resolution.seconds
+            ),
+            LinePoint(
+                instrumentID: instrument.id,
+                timestamp: baseTimestamp + 60,
+                price: 199,
+                volume: 950,
+                source: id,
+                quality: .backfill,
+                resolutionSeconds: resolution.seconds
+            ),
+            LinePoint(
+                instrumentID: instrument.id,
+                timestamp: baseTimestamp + 120,
+                price: 200,
+                volume: 980,
+                source: id,
+                quality: .backfill,
+                resolutionSeconds: resolution.seconds
+            )
+        ]
+    }
+}
+
+private final class FixtureStockProvider: @unchecked Sendable, MarketDataProvider {
+    let id = "fixture-stocks"
+    let supportedType: InstrumentType = .equity
+
+    static let apple = InstrumentMetadata(
+        id: InstrumentID(type: .equity, symbol: "AAPL"),
+        displaySymbol: "AAPL",
+        name: "Apple Inc.",
+        exchange: "NASDAQ",
+        currency: "USD",
+        provider: "fixture-stocks",
+        session: "Market hours"
+    )
+
+    func searchInstruments(query: String) async throws -> [InstrumentMetadata] {
+        query.uppercased().contains("AAPL") ? [Self.apple] : []
+    }
+
+    func latestQuote(for instrument: InstrumentMetadata) async throws -> LinePoint {
+        LinePoint(
+            instrumentID: instrument.id,
+            timestamp: Int64(Date().timeIntervalSince1970),
+            price: 103,
+            volume: nil,
+            source: id,
+            quality: .delayed,
+            resolutionSeconds: SeriesResolution.oneMinute.seconds
+        )
+    }
+
+    func liveQuotes(for instrument: InstrumentMetadata) -> AsyncThrowingStream<LinePoint, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(
+                LinePoint(
+                    instrumentID: instrument.id,
+                    timestamp: Int64(Date().timeIntervalSince1970) + 60,
+                    price: 104,
+                    volume: 1_200,
+                    source: self.id,
+                    quality: .live,
+                    resolutionSeconds: SeriesResolution.oneMinute.seconds
+                )
+            )
+            continuation.finish()
+        }
+    }
+
+    func historicalPoints(
+        for instrument: InstrumentMetadata,
+        from: Date,
+        to: Date,
+        resolution: SeriesResolution,
+        maxPoints: Int
+    ) async throws -> [LinePoint] {
+        let start = Int64(Date().addingTimeInterval(-120).timeIntervalSince1970)
+        return [
+            LinePoint(
+                instrumentID: instrument.id,
+                timestamp: start,
+                price: 101,
+                volume: 900,
+                source: id,
+                quality: .backfill,
+                resolutionSeconds: resolution.seconds
+            ),
+            LinePoint(
+                instrumentID: instrument.id,
+                timestamp: start + 60,
+                price: 102,
+                volume: 950,
+                source: id,
+                quality: .backfill,
+                resolutionSeconds: resolution.seconds
+            )
+        ]
+    }
+}
+
+private final class RejectingStockProvider: @unchecked Sendable, MarketDataProvider {
+    let id = "rejecting-stocks"
+    let supportedType: InstrumentType = .equity
+
+    func searchInstruments(query: String) async throws -> [InstrumentMetadata] {
+        throw ProviderError.badResponse(provider: id, detail: "No access")
+    }
+
+    func latestQuote(for instrument: InstrumentMetadata) async throws -> LinePoint {
+        throw ProviderError.badResponse(provider: id, detail: "No access")
+    }
+
+    func liveQuotes(for instrument: InstrumentMetadata) -> AsyncThrowingStream<LinePoint, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: ProviderError.badResponse(provider: self.id, detail: "No access"))
+        }
+    }
+
+    func historicalPoints(
+        for instrument: InstrumentMetadata,
+        from: Date,
+        to: Date,
+        resolution: SeriesResolution,
+        maxPoints: Int
+    ) async throws -> [LinePoint] {
+        throw ProviderError.badResponse(provider: id, detail: "No access")
     }
 }
 

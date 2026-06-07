@@ -9,10 +9,26 @@ private extension Notification.Name {
 }
 
 private enum Motion {
-    static let standard = Animation.easeInOut(duration: 0.22)
-    static let micro = Animation.linear(duration: 0.10)
-    static let chartTransition = Animation.easeInOut(duration: 0.34)
-    static let chartPending = Animation.easeInOut(duration: 0.24)
+    static let standard = Animation.easeOut(duration: 0.16)
+    static let micro = Animation.easeOut(duration: 0.08)
+    static let chartTransition = Animation.easeOut(duration: 0.18)
+    static let spring = Animation.interactiveSpring(response: 0.22, dampingFraction: 0.88, blendDuration: 0.08)
+}
+
+@ViewBuilder
+private func liquidGlassSurface<S: Shape>(
+    _ shape: S,
+    tint: Color = Color.black.opacity(0.22),
+    fallbackFill: Color = Color.black.opacity(0.16),
+    strokeOpacity: Double = 0.08
+) -> some View {
+    if #available(macOS 26.0, *) {
+        shape.glassEffect(.regular.tint(tint), in: shape)
+    } else {
+        shape
+            .fill(fallbackFill)
+            .overlay(shape.stroke(Color.white.opacity(strokeOpacity), lineWidth: 1))
+    }
 }
 
 private enum WorkspaceTab {
@@ -201,8 +217,21 @@ struct ContentView: View {
         return live
     }
 
+    private var indicatorSourcePoints: [GraphPoint] {
+        let live = market.points.enumerated().map { index, point in
+            GraphPoint(index: index, date: point.date, value: point.price, volume: point.volume)
+        }
+
+        guard live.count > 1 else {
+            return market.startupState == .loading ? fallbackPoints : []
+        }
+
+        return live
+    }
+
     var body: some View {
         let renderedPoints = visiblePoints
+        let indicatorPoints = indicatorSourcePoints
         let analytics = renderedPoints.count == market.points.count && market.points.count > 1
             ? market.analytics
             : Self.analytics(from: renderedPoints)
@@ -215,6 +244,7 @@ struct ContentView: View {
                 AeviumWorkspace(
                     market: market,
                     points: renderedPoints,
+                    indicatorPoints: indicatorPoints,
                     watchlist: environment.watchlist,
                     selectedTab: $selectedTab,
                     selectedRange: $selectedRange,
@@ -222,6 +252,7 @@ struct ContentView: View {
                     selectedIndicators: $selectedIndicators,
                     chartSmoothness: $chartSmoothness,
                     displayedRange: displayedRange,
+                    instrumentType: market.selectedInstrument.id.type,
                     instrumentSymbol: market.selectedInstrument.compactTitle,
                     instrumentSession: market.selectedInstrument.session,
                     syncState: market.syncState,
@@ -252,7 +283,9 @@ struct ContentView: View {
         }
         .onReceive(environment.$instrumentSelectionRequest) { request in
             guard let request else { return }
-            selectedTab = .market
+            withAnimation(Motion.spring) {
+                selectedTab = .market
+            }
             market.selectInstrument(request.instrument)
         }
         .onDisappear {
@@ -289,7 +322,7 @@ struct ContentView: View {
         guard bootMinimumElapsed else { return }
         guard bootFallbackElapsed || market.startupState != .loading else { return }
 
-        withAnimation(.easeOut(duration: 0.45)) {
+        withAnimation(.easeOut(duration: 0.22)) {
             bootSplashVisible = false
         }
     }
@@ -329,6 +362,7 @@ private struct AeviumWorkspace: View {
 
     @ObservedObject var market: AeviumMarketViewModel
     let points: [GraphPoint]
+    let indicatorPoints: [GraphPoint]
     @ObservedObject var watchlist: InstrumentWatchlistStore
     @Binding var selectedTab: WorkspaceTab
     @Binding var selectedRange: ChartRange
@@ -336,6 +370,7 @@ private struct AeviumWorkspace: View {
     @Binding var selectedIndicators: Set<ForesightIndicator>
     @Binding var chartSmoothness: Double
     let displayedRange: ChartRange
+    let instrumentType: InstrumentType
     let instrumentSymbol: String
     let instrumentSession: String
     let syncState: SyncState
@@ -354,7 +389,11 @@ private struct AeviumWorkspace: View {
                 isOldStyleFullscreen: isOldStyleFullscreen,
                 selectedTab: selectedTab,
                 onSelectMarketTab: showMarket,
-                onSelectOverviewTab: { selectedTab = .overview },
+                onSelectOverviewTab: {
+                    withAnimation(Motion.spring) {
+                        selectedTab = .overview
+                    }
+                },
                 onSettingsTapped: { isSettingsPresented = true }
             )
 
@@ -385,8 +424,10 @@ private struct AeviumWorkspace: View {
                         HStack(spacing: 0) {
                             SmoothRangeChartStage(
                                 points: points,
+                                indicatorPoints: indicatorPoints,
                                 analytics: analytics,
                                 selectedRange: displayedRange,
+                                instrumentType: instrumentType,
                                 foresightRange: selectedForesight,
                                 selectedIndicators: selectedIndicators,
                                 chartSmoothness: chartSmoothness,
@@ -433,8 +474,6 @@ private struct AeviumWorkspace: View {
                             .transition(.opacity)
                         }
                     }
-                    .animation(Motion.standard, value: inspectorReveal)
-                    .animation(Motion.micro, value: points.isEmpty)
                 } else {
                     MarketOverviewTab()
                 }
@@ -450,13 +489,15 @@ private struct AeviumWorkspace: View {
 
     private func toggleInspector() {
         inspectorTargetOpen.toggle()
-        withAnimation(Motion.standard) {
+        withAnimation(Motion.spring) {
             inspectorReveal = inspectorTargetOpen ? 1.0 : 0.0
         }
     }
 
     private func showMarket() {
-        selectedTab = .market
+        withAnimation(Motion.spring) {
+            selectedTab = .market
+        }
     }
 }
 
@@ -466,6 +507,7 @@ private struct AeviumRail: View {
     let onSelectMarketTab: () -> Void
     let onSelectOverviewTab: () -> Void
     let onSettingsTapped: () -> Void
+    @Namespace private var railSelectionNamespace
 
     var body: some View {
         VStack(spacing: 14) {
@@ -509,21 +551,26 @@ private struct AeviumRail: View {
             }
             .foregroundStyle(active ? Color(red: 0.72, green: 0.88, blue: 0.82) : .white.opacity(0.36))
             .frame(width: 54, height: 48)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(active ? Color.white.opacity(0.085) : Color.clear)
-            )
-            .overlay(alignment: .leading) {
+            .background {
                 if active {
-                    Capsule()
-                        .fill(Color(red: 0.72, green: 0.88, blue: 0.82))
-                        .frame(width: 3, height: 22)
-                        .offset(x: -7)
+                    liquidGlassSurface(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous),
+                        fallbackFill: Color.white.opacity(0.085)
+                    )
+                        .matchedGeometryEffect(id: "rail-selection", in: railSelectionNamespace)
+                        .overlay(alignment: .leading) {
+                            Capsule()
+                                .fill(Color(red: 0.72, green: 0.88, blue: 0.82))
+                                .frame(width: 3, height: 22)
+                                .offset(x: -7)
+                        }
+                        .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 4)
                 }
             }
         }
         .buttonStyle(.plain)
         .help(help ?? icon)
+        .animation(Motion.spring, value: active)
     }
 }
 
@@ -554,7 +601,21 @@ private struct WorkspaceTopBar: View {
         .padding(.leading, 22)
         .padding(.trailing, 22)
         .frame(height: 58)
-        .background(Color.black.opacity(0.08))
+        .background(
+            LinearGradient(
+                colors: [
+                    Color(red: 0.07, green: 0.08, blue: 0.10),
+                    Color(red: 0.04, green: 0.05, blue: 0.07)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(Color.white.opacity(0.04))
+                    .frame(height: 1)
+            }
+        )
     }
 }
 
@@ -585,7 +646,9 @@ private struct MarketCommandBar: View {
                 .layoutPriority(1)
 
             Button {
-                watchlist.toggle(market.selectedInstrument)
+                withAnimation(Motion.spring) {
+                    watchlist.toggle(market.selectedInstrument)
+                }
             } label: {
                 Image(systemName: isSaved ? "star.fill" : "star")
                     .font(.system(size: 13, weight: .semibold))
@@ -593,7 +656,20 @@ private struct MarketCommandBar: View {
                     .frame(width: 34, height: 34)
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(isSaved ? Color(red: 0.92, green: 0.78, blue: 0.44).opacity(0.13) : Color.white.opacity(0.055))
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        isSaved ? Color(red: 0.18, green: 0.15, blue: 0.10).opacity(0.98) : Color(red: 0.08, green: 0.09, blue: 0.11).opacity(0.98),
+                                        isSaved ? Color(red: 0.11, green: 0.10, blue: 0.08).opacity(0.98) : Color(red: 0.05, green: 0.06, blue: 0.08).opacity(0.98)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(Color.white.opacity(isSaved ? 0.08 : 0.05), lineWidth: 1)
+                            )
                     )
             }
             .buttonStyle(.plain)
@@ -615,7 +691,20 @@ private struct MarketCommandBar: View {
                     .frame(width: 34, height: 34)
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.white.opacity(isInspectorOpen ? 0.075 : 0.045))
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.08, green: 0.09, blue: 0.11).opacity(0.98),
+                                        Color(red: 0.05, green: 0.06, blue: 0.08).opacity(0.98)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(Color.white.opacity(isInspectorOpen ? 0.08 : 0.05), lineWidth: 1)
+                            )
                     )
             }
             .buttonStyle(.plain)
@@ -624,7 +713,24 @@ private struct MarketCommandBar: View {
         .padding(.leading, 18)
         .padding(.trailing, 18)
         .frame(height: 58)
-        .background(Color.black.opacity(0.12))
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.08, green: 0.09, blue: 0.11).opacity(0.98),
+                            Color(red: 0.05, green: 0.06, blue: 0.08).opacity(0.98)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.white.opacity(0.055), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.18), radius: 18, x: 0, y: 10)
+        )
     }
 
     private var brandBlock: some View {
@@ -704,10 +810,10 @@ struct AeviumSettingsView: View {
                         .frame(height: 38)
                         .background(
                             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .fill(Color.black.opacity(0.20))
+                                .fill(Color(red: 0.08, green: 0.09, blue: 0.11).opacity(0.98))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                        .stroke(Color.white.opacity(0.055), lineWidth: 1)
                                 )
                         )
 
@@ -715,13 +821,17 @@ struct AeviumSettingsView: View {
                             isKeyVisible.toggle()
                         } label: {
                             Image(systemName: isKeyVisible ? "eye.slash" : "eye")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.56))
-                                .frame(width: 38, height: 38)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                        .fill(Color.white.opacity(0.055))
-                                )
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.56))
+                            .frame(width: 38, height: 38)
+                            .background(
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .fill(Color(red: 0.08, green: 0.09, blue: 0.11).opacity(0.98))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                            .stroke(Color.white.opacity(0.055), lineWidth: 1)
+                                    )
+                            )
                         }
                         .buttonStyle(.plain)
                         .help(isKeyVisible ? "Hide key" : "Show key")
@@ -744,7 +854,20 @@ struct AeviumSettingsView: View {
                             .padding(.horizontal, 14)
                             .background(
                                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                    .fill(Color(red: 0.67, green: 0.86, blue: 0.78))
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [
+                                                Color(red: 0.72, green: 0.88, blue: 0.82),
+                                                Color(red: 0.58, green: 0.78, blue: 0.72)
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                    )
                             )
                     }
                     .buttonStyle(.plain)
@@ -759,7 +882,11 @@ struct AeviumSettingsView: View {
                             .padding(.horizontal, 14)
                             .background(
                                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                    .fill(Color.white.opacity(0.055))
+                                    .fill(Color(red: 0.08, green: 0.09, blue: 0.11).opacity(0.98))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                            .stroke(Color.white.opacity(0.055), lineWidth: 1)
+                                    )
                             )
                     }
                     .buttonStyle(.plain)
@@ -770,20 +897,22 @@ struct AeviumSettingsView: View {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(
+                    .fill(Color(red: 0.08, green: 0.11, blue: 0.12).opacity(0.96))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                    )
+                    .overlay(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(0.045),
-                                Color(red: 0.08, green: 0.12, blue: 0.13).opacity(0.72),
-                                Color.black.opacity(0.20)
+                                Color.white.opacity(0.035),
+                                Color(red: 0.08, green: 0.12, blue: 0.13).opacity(0.38),
+                                Color.black.opacity(0.18)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     )
             )
         }
@@ -825,10 +954,10 @@ struct AeviumSettingsView: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.black.opacity(0.15))
+                .fill(Color(red: 0.08, green: 0.09, blue: 0.11).opacity(0.98))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.055), lineWidth: 1)
                 )
         )
     }
@@ -902,8 +1031,10 @@ private struct FullscreenWindowControls: View {
 
 private struct SmoothRangeChartStage: View {
     let points: [GraphPoint]
+    let indicatorPoints: [GraphPoint]
     let analytics: MarketSeriesAnalytics
     let selectedRange: ChartRange
+    let instrumentType: InstrumentType
     let foresightRange: ForesightRange
     let selectedIndicators: Set<ForesightIndicator>
     let chartSmoothness: Double
@@ -920,9 +1051,13 @@ private struct SmoothRangeChartStage: View {
     private struct ChartSnapshot {
         struct Key: Equatable {
             let range: ChartRange
+            let instrumentType: InstrumentType
             let count: Int
             let firstID: TimeInterval?
             let lastID: TimeInterval?
+            let indicatorCount: Int
+            let indicatorFirstID: TimeInterval?
+            let indicatorLastID: TimeInterval?
             let lowValue: Double
             let highValue: Double
             let lastValue: Double
@@ -934,8 +1069,10 @@ private struct SmoothRangeChartStage: View {
         }
 
         let points: [GraphPoint]
+        let indicatorPoints: [GraphPoint]
         let analytics: MarketSeriesAnalytics
         let range: ChartRange
+        let instrumentType: InstrumentType
         let foresightRange: ForesightRange
         let selectedIndicators: Set<ForesightIndicator>
         let chartSmoothness: Double
@@ -945,9 +1082,13 @@ private struct SmoothRangeChartStage: View {
         var key: Key {
             Key(
                 range: range,
+                instrumentType: instrumentType,
                 count: points.count,
                 firstID: points.first?.id,
                 lastID: points.last?.id,
+                indicatorCount: indicatorPoints.count,
+                indicatorFirstID: indicatorPoints.first?.id,
+                indicatorLastID: indicatorPoints.last?.id,
                 lowValue: analytics.lowValue,
                 highValue: analytics.highValue,
                 lastValue: analytics.lastValue,
@@ -963,8 +1104,10 @@ private struct SmoothRangeChartStage: View {
     private var currentSnapshot: ChartSnapshot {
         ChartSnapshot(
             points: points,
+            indicatorPoints: indicatorPoints,
             analytics: analytics,
             range: selectedRange,
+            instrumentType: instrumentType,
             foresightRange: foresightRange,
             selectedIndicators: selectedIndicators,
             chartSmoothness: chartSmoothness,
@@ -993,7 +1136,6 @@ private struct SmoothRangeChartStage: View {
             }
         }
         .compositingGroup()
-        .animation(Motion.chartPending, value: isRangeTransitioning)
         .onAppear {
             lastSnapshot = snapshot
         }
@@ -1025,8 +1167,10 @@ private struct SmoothRangeChartStage: View {
     private func chart(for snapshot: ChartSnapshot) -> some View {
         ChartStage(
             points: snapshot.points,
+            indicatorPoints: snapshot.indicatorPoints,
             analytics: snapshot.analytics,
             selectedRange: snapshot.range,
+            instrumentType: snapshot.instrumentType,
             foresightRange: snapshot.foresightRange,
             selectedIndicators: snapshot.selectedIndicators,
             chartSmoothness: snapshot.chartSmoothness,
@@ -1070,7 +1214,7 @@ private struct SmoothRangeChartStage: View {
                 outgoingOpacity = 0.0
             }
 
-            try? await Task.sleep(nanoseconds: 420_000_000)
+            try? await Task.sleep(nanoseconds: 220_000_000)
             guard !Task.isCancelled else { return }
 
             var cleanupTransaction = Transaction()
@@ -1086,8 +1230,10 @@ private struct SmoothRangeChartStage: View {
 
 private struct ChartStage: View {
     let points: [GraphPoint]
+    let indicatorPoints: [GraphPoint]
     let analytics: MarketSeriesAnalytics
     let selectedRange: ChartRange
+    let instrumentType: InstrumentType
     let foresightRange: ForesightRange
     let selectedIndicators: Set<ForesightIndicator>
     let chartSmoothness: Double
@@ -1106,6 +1252,7 @@ private struct ChartStage: View {
 
     private struct CameraInput: Equatable {
         let range: ChartRange
+        let instrumentType: InstrumentType
         let count: Int
         let firstID: TimeInterval?
         let lastID: TimeInterval?
@@ -1124,10 +1271,80 @@ private struct ChartStage: View {
 
     private struct IndicatorOverlay {
         let id: String
+        let label: String
         let color: Color
         let lineWidth: CGFloat
         let dashed: Bool
         let points: [IndicatorPoint]
+    }
+
+    private struct HoverIndicatorValue: Identifiable {
+        let id: String
+        let label: String
+        let formattedValue: String
+        let color: Color
+    }
+
+    private struct XAxisProjection {
+        struct Interval {
+            let actualStart: Date
+            let actualEnd: Date
+            let projectedStart: TimeInterval
+            let projectedEnd: TimeInterval
+        }
+
+        let intervals: [Interval]
+        let totalDuration: TimeInterval
+
+        func progress(for date: Date) -> Double {
+            guard !intervals.isEmpty, totalDuration > 0 else { return 0 }
+
+            if date <= intervals[0].actualStart {
+                return 0
+            }
+
+            for interval in intervals {
+                if date <= interval.actualEnd {
+                    let offset = interval.projectedStart + max(date.timeIntervalSince(interval.actualStart), 0)
+                    return (offset / totalDuration).clamped(to: 0...1)
+                }
+            }
+
+            return 1
+        }
+
+        func date(at progress: Double) -> Date {
+            guard let first = intervals.first else { return Date() }
+            let offset = totalDuration * progress.clamped(to: 0...1)
+
+            for interval in intervals {
+                if offset <= interval.projectedEnd {
+                    return interval.actualStart.addingTimeInterval(max(offset - interval.projectedStart, 0))
+                }
+            }
+
+            return intervals.last?.actualEnd ?? first.actualStart
+        }
+
+        func tickDates(targetCount: Int) -> [Date] {
+            guard targetCount > 1, totalDuration > 0 else {
+                return intervals.first.map { [$0.actualStart, $0.actualEnd] } ?? []
+            }
+
+            var dates: [Date] = []
+            dates.reserveCapacity(targetCount)
+
+            for index in 0..<targetCount {
+                let progress = Double(index) / Double(max(targetCount - 1, 1))
+                let date = date(at: progress)
+                if let last = dates.last, abs(date.timeIntervalSince(last)) < 60 {
+                    continue
+                }
+                dates.append(date)
+            }
+
+            return dates
+        }
     }
 
     private static let dayPrefixFormatter: DateFormatter = {
@@ -1152,12 +1369,22 @@ private struct ChartStage: View {
     }()
 
     private var yAxisConfiguration: YAxisConfiguration {
-        makeYAxisConfiguration(lowValue: analytics.lowValue, highValue: analytics.highValue)
+        let renderPoints = chartRenderablePoints()
+        let indicatorSourcePoints = indicatorRenderablePoints()
+        let domain = targetXDomain() ?? fallbackXDomain()
+        let indicatorOverlays = makeIndicatorOverlays(
+            from: indicatorSourcePoints.isEmpty ? renderPoints : indicatorSourcePoints,
+            visibleDomain: domain,
+            futureUpperBound: domain.upperBound
+        )
+
+        return makeYAxisConfiguration(including: indicatorOverlays)
     }
 
     private var cameraInput: CameraInput {
         CameraInput(
             range: selectedRange,
+            instrumentType: instrumentType,
             count: points.count,
             firstID: points.first?.id,
             lastID: points.last?.id,
@@ -1193,30 +1420,57 @@ private struct ChartStage: View {
         )
     }
 
+    private func makeYAxisConfiguration(including indicatorOverlays: [IndicatorOverlay]) -> YAxisConfiguration {
+        var lowValue = analytics.lowValue
+        var highValue = analytics.highValue
+
+        for overlay in indicatorOverlays {
+            for point in overlay.points where point.value.isFinite && point.value > 0 {
+                lowValue = min(lowValue, point.value)
+                highValue = max(highValue, point.value)
+            }
+        }
+
+        return makeYAxisConfiguration(lowValue: lowValue, highValue: highValue)
+    }
+
     var body: some View {
         GeometryReader { proxy in
             let xDomain = displayedXDomain ?? targetXDomain() ?? fallbackXDomain()
-            let yAxis = displayedYAxis ?? yAxisConfiguration
-            let ticks = adaptiveXAxisTicks(plotWidth: proxy.size.width, domain: xDomain)
-            let labels = makeXAxisLabels(from: ticks)
             let renderPoints = chartRenderablePoints()
-            let visualPoints = smoothedRenderablePoints(from: renderPoints)
+            let indicatorSourcePoints = indicatorRenderablePoints()
+            let renderSegments = segmentedRenderablePoints(from: renderPoints)
+            let visualSegments = renderSegments.map { smoothedRenderablePoints(from: $0) }
+            let xProjection = makeXAxisProjection(
+                domain: xDomain,
+                pointSegments: renderSegments
+            )
+            let ticks = adaptiveXAxisTicks(
+                plotWidth: proxy.size.width,
+                domain: xDomain,
+                projection: xProjection
+            )
+            let labels = makeXAxisLabels(from: ticks)
             let indicatorOverlays = makeIndicatorOverlays(
-                from: renderPoints,
+                from: indicatorSourcePoints.isEmpty ? renderPoints : indicatorSourcePoints,
+                visibleDomain: xDomain,
                 futureUpperBound: xDomain.upperBound
             )
+            let yAxis = displayedYAxis ?? makeYAxisConfiguration(including: indicatorOverlays)
             let plot = plotRect(in: proxy.size)
             let hoverPoint = nearestPoint(
                 to: hoverLocation,
                 in: plot,
                 points: renderPoints,
-                xDomain: xDomain
+                xDomain: xDomain,
+                projection: xProjection
             )
 
             ZStack(alignment: .topLeading) {
                 futureLaneOverlay(
                     plot: plot,
-                    xDomain: xDomain
+                    xDomain: xDomain,
+                    projection: xProjection
                 )
 
                 Canvas { context, size in
@@ -1224,9 +1478,11 @@ private struct ChartStage: View {
                         context: &context,
                         size: size,
                         points: renderPoints,
-                        visualPoints: visualPoints,
+                        pointSegments: renderSegments,
+                        visualPointSegments: visualSegments,
                         indicatorOverlays: indicatorOverlays,
                         xDomain: xDomain,
+                        xProjection: xProjection,
                         yAxis: yAxis,
                         xTicks: ticks
                     )
@@ -1235,6 +1491,7 @@ private struct ChartStage: View {
                 axisLabelOverlay(
                     size: proxy.size,
                     xDomain: xDomain,
+                    xProjection: xProjection,
                     yAxis: yAxis,
                     xTicks: ticks,
                     labels: labels
@@ -1243,8 +1500,10 @@ private struct ChartStage: View {
                 if let hoverPoint {
                     hoverOverlay(
                         point: hoverPoint,
+                        indicatorOverlays: indicatorOverlays,
                         plot: plot,
                         xDomain: xDomain,
+                        xProjection: xProjection,
                         yAxis: yAxis
                     )
                 }
@@ -1309,9 +1568,11 @@ private struct ChartStage: View {
         context: inout GraphicsContext,
         size: CGSize,
         points: [GraphPoint],
-        visualPoints: [GraphPoint],
+        pointSegments: [[GraphPoint]],
+        visualPointSegments: [[GraphPoint]],
         indicatorOverlays: [IndicatorOverlay],
         xDomain: ClosedRange<Date>,
+        xProjection: XAxisProjection?,
         yAxis: YAxisConfiguration,
         xTicks: [Date]
     ) {
@@ -1330,7 +1591,7 @@ private struct ChartStage: View {
         }
 
         for tick in xTicks {
-            let x = xPosition(for: tick, in: plot, xDomain: xDomain)
+            let x = xPosition(for: tick, in: plot, xDomain: xDomain, projection: xProjection)
             var path = Path()
             path.move(to: CGPoint(x: x, y: plot.minY))
             path.addLine(to: CGPoint(x: x, y: plot.maxY))
@@ -1344,57 +1605,80 @@ private struct ChartStage: View {
 
         guard points.count > 1 else { return }
 
-        let mapped = visualPoints.map {
-            position(for: $0, in: plot, xDomain: xDomain, yDomain: yAxis.domain)
-        }
+        let lineColor = isUp
+            ? Color(red: 0.60, green: 0.86, blue: 0.75)
+            : Color(red: 0.88, green: 0.68, blue: 0.68)
 
-        guard let first = mapped.first, let last = mapped.last else { return }
-
-        var area = Path()
-        area.move(to: CGPoint(x: first.x, y: plot.maxY))
-        for point in mapped {
-            area.addLine(to: point)
-        }
-        area.addLine(to: CGPoint(x: last.x, y: plot.maxY))
-        area.closeSubpath()
-        context.fill(
-            area,
-            with: .linearGradient(
-                Gradient(colors: [
-                    (isUp ? Color(red: 0.48, green: 0.76, blue: 0.66) : Color(red: 0.82, green: 0.55, blue: 0.57)).opacity(0.22),
-                    Color(red: 0.20, green: 0.28, blue: 0.30).opacity(0.04)
-                ]),
-                startPoint: CGPoint(x: plot.midX, y: plot.minY),
-                endPoint: CGPoint(x: plot.midX, y: plot.maxY)
-            )
+        let areaFill = GraphicsContext.Shading.linearGradient(
+            Gradient(colors: [
+                lineColor.opacity(0.22),
+                Color(red: 0.20, green: 0.28, blue: 0.30).opacity(0.04)
+            ]),
+            startPoint: CGPoint(x: plot.midX, y: plot.minY),
+            endPoint: CGPoint(x: plot.midX, y: plot.maxY)
         )
+
+        let shouldBridgeCompressedSessions = instrumentType == .equity && xProjection != nil
+        let drawSegments = shouldBridgeCompressedSessions
+            ? [visualPointSegments.flatMap { $0 }]
+            : visualPointSegments
+
+        for segment in drawSegments where segment.count > 1 {
+            let mapped = segment.map {
+                position(for: $0, in: plot, xDomain: xDomain, projection: xProjection, yDomain: yAxis.domain)
+            }
+
+            guard let first = mapped.first, let last = mapped.last else { continue }
+
+            var area = Path()
+            area.move(to: CGPoint(x: first.x, y: plot.maxY))
+            for point in mapped {
+                area.addLine(to: point)
+            }
+            area.addLine(to: CGPoint(x: last.x, y: plot.maxY))
+            area.closeSubpath()
+            context.fill(area, with: areaFill)
+        }
 
         drawIndicatorOverlays(
             context: &context,
             overlays: indicatorOverlays,
             plot: plot,
             xDomain: xDomain,
+            xProjection: xProjection,
             yDomain: yAxis.domain
         )
 
-        var line = Path()
-        line.move(to: first)
-        for point in mapped.dropFirst() {
-            line.addLine(to: point)
+        for segment in drawSegments where segment.count > 1 {
+            let mapped = segment.map {
+                position(for: $0, in: plot, xDomain: xDomain, projection: xProjection, yDomain: yAxis.domain)
+            }
+
+            guard let first = mapped.first else { continue }
+
+            var line = Path()
+            line.move(to: first)
+            for point in mapped.dropFirst() {
+                line.addLine(to: point)
+            }
+
+            context.stroke(
+                line,
+                with: .color(lineColor),
+                style: StrokeStyle(lineWidth: 2.1, lineCap: .round, lineJoin: .round)
+            )
         }
 
-        let lineColor = isUp
-            ? Color(red: 0.60, green: 0.86, blue: 0.75)
-            : Color(red: 0.88, green: 0.68, blue: 0.68)
-
-        context.stroke(
-            line,
-            with: .color(lineColor),
-            style: StrokeStyle(lineWidth: 2.1, lineCap: .round, lineJoin: .round)
+        drawSessionGapMarkers(
+            context: &context,
+            pointSegments: pointSegments,
+            plot: plot,
+            xDomain: xDomain,
+            projection: xProjection
         )
 
         if let latest = points.last {
-            let latestPoint = position(for: latest, in: plot, xDomain: xDomain, yDomain: yAxis.domain)
+            let latestPoint = position(for: latest, in: plot, xDomain: xDomain, projection: xProjection, yDomain: yAxis.domain)
             var rule = Path()
             rule.move(to: CGPoint(x: plot.minX, y: latestPoint.y))
             rule.addLine(to: CGPoint(x: plot.maxX, y: latestPoint.y))
@@ -1462,42 +1746,59 @@ private struct ChartStage: View {
         overlays: [IndicatorOverlay],
         plot: CGRect,
         xDomain: ClosedRange<Date>,
+        xProjection: XAxisProjection?,
         yDomain: ClosedRange<Double>
     ) {
         for overlay in overlays {
             guard overlay.points.count > 1 else { continue }
 
-            var path = Path()
-            let mapped = overlay.points.map {
-                position(for: GraphPoint(index: 0, date: $0.date, value: $0.value, volume: nil), in: plot, xDomain: xDomain, yDomain: yDomain)
-            }
+            let pointSegments = overlay.dashed
+                ? [overlay.points]
+                : segmentedIndicatorPoints(from: overlay.points)
+            let drawSegments = instrumentType == .equity && xProjection != nil
+                ? [pointSegments.flatMap { $0 }]
+                : pointSegments
 
-            guard let first = mapped.first else { continue }
-            path.move(to: first)
-            for point in mapped.dropFirst() {
-                path.addLine(to: point)
-            }
+            for segment in drawSegments where segment.count > 1 {
+                var path = Path()
+                let mapped = segment.map {
+                    position(
+                        for: GraphPoint(index: 0, date: $0.date, value: $0.value, volume: nil),
+                        in: plot,
+                        xDomain: xDomain,
+                        projection: xProjection,
+                        yDomain: yDomain
+                    )
+                }
 
-            context.stroke(
-                path,
-                with: .color(overlay.color),
-                style: StrokeStyle(
-                    lineWidth: overlay.lineWidth,
-                    lineCap: .round,
-                    lineJoin: .round,
-                    dash: overlay.dashed ? [6, 5] : []
+                guard let first = mapped.first else { continue }
+                path.move(to: first)
+                for point in mapped.dropFirst() {
+                    path.addLine(to: point)
+                }
+
+                context.stroke(
+                    path,
+                    with: .color(overlay.color),
+                    style: StrokeStyle(
+                        lineWidth: overlay.lineWidth,
+                        lineCap: .round,
+                        lineJoin: .round,
+                        dash: overlay.dashed ? [6, 5] : []
+                    )
                 )
-            )
+            }
         }
     }
 
     @ViewBuilder
     private func futureLaneOverlay(
         plot: CGRect,
-        xDomain: ClosedRange<Date>
+        xDomain: ClosedRange<Date>,
+        projection: XAxisProjection?
     ) -> some View {
         if foresightRange != .off, let latestDate = points.last?.date {
-            let latestX = xPosition(for: latestDate, in: plot, xDomain: xDomain)
+            let latestX = xPosition(for: latestDate, in: plot, xDomain: xDomain, projection: projection)
             let laneWidth = max(plot.maxX - latestX, 0)
 
             if laneWidth > 0.5 {
@@ -1530,44 +1831,117 @@ private struct ChartStage: View {
 
     private func makeIndicatorOverlays(
         from points: [GraphPoint],
+        visibleDomain: ClosedRange<Date>,
         futureUpperBound: Date
     ) -> [IndicatorOverlay] {
         guard points.count > 2, !selectedIndicators.isEmpty else { return [] }
 
         var overlays: [IndicatorOverlay] = []
+        let latestActualDate = points.last?.date
+        func append(_ series: [IndicatorPoint], as indicator: ForesightIndicator) {
+            overlays.append(
+                contentsOf: overlaysForSeries(
+                    series,
+                    indicator: indicator,
+                    visibleDomain: visibleDomain,
+                    futureUpperBound: futureUpperBound
+                )
+            )
+        }
+        func appendFuture(_ series: [IndicatorPoint], as indicator: ForesightIndicator) {
+            overlays.append(
+                contentsOf: futureOverlaysForSeries(
+                    series,
+                    indicator: indicator,
+                    latestActualDate: latestActualDate,
+                    futureUpperBound: futureUpperBound
+                )
+            )
+        }
 
         for indicator in ForesightIndicator.menuCases where selectedIndicators.contains(indicator) {
             switch indicator {
+            case .sma10:
+                append(smaSeries(period: 10, points: points), as: indicator)
             case .sma20:
-                let series = smaSeries(period: 20, points: points)
-                overlays.append(contentsOf: overlaysForSeries(series, indicator: indicator, futureUpperBound: futureUpperBound))
+                append(smaSeries(period: 20, points: points), as: indicator)
             case .sma50:
-                let series = smaSeries(period: 50, points: points)
-                overlays.append(contentsOf: overlaysForSeries(series, indicator: indicator, futureUpperBound: futureUpperBound))
+                append(smaSeries(period: 50, points: points), as: indicator)
+            case .sma100:
+                append(smaSeries(period: 100, points: points), as: indicator)
+            case .sma200:
+                append(smaSeries(period: 200, points: points), as: indicator)
+            case .ema9:
+                append(emaSeries(period: 9, points: points), as: indicator)
+            case .ema12:
+                append(emaSeries(period: 12, points: points), as: indicator)
             case .ema20:
-                let series = emaSeries(period: 20, points: points)
-                overlays.append(contentsOf: overlaysForSeries(series, indicator: indicator, futureUpperBound: futureUpperBound))
+                append(emaSeries(period: 20, points: points), as: indicator)
+            case .ema26:
+                append(emaSeries(period: 26, points: points), as: indicator)
             case .ema50:
-                let series = emaSeries(period: 50, points: points)
-                overlays.append(contentsOf: overlaysForSeries(series, indicator: indicator, futureUpperBound: futureUpperBound))
+                append(emaSeries(period: 50, points: points), as: indicator)
+            case .ema100:
+                append(emaSeries(period: 100, points: points), as: indicator)
+            case .ema200:
+                append(emaSeries(period: 200, points: points), as: indicator)
+            case .wma20:
+                append(wmaSeries(period: 20, points: points), as: indicator)
+            case .hma21:
+                append(hmaSeries(period: 21, points: points), as: indicator)
             case .vwap:
-                let series = vwapSeries(points: points)
-                overlays.append(contentsOf: overlaysForSeries(series, indicator: indicator, futureUpperBound: futureUpperBound))
+                append(vwapSeries(points: points), as: indicator)
+            case .previousClose:
+                append(previousCloseSeries(points: points, visibleDomain: visibleDomain, futureUpperBound: futureUpperBound), as: indicator)
             case .bollingerBands:
                 let bands = bollingerBands(period: 20, points: points)
-                overlays.append(contentsOf: overlaysForSeries(bands.mid, indicator: .bollingerMid, futureUpperBound: futureUpperBound))
-                overlays.append(contentsOf: overlaysForSeries(bands.upper, indicator: .bollingerUpper, futureUpperBound: futureUpperBound))
-                overlays.append(contentsOf: overlaysForSeries(bands.lower, indicator: .bollingerLower, futureUpperBound: futureUpperBound))
+                append(bands.mid, as: .bollingerMid)
+                append(bands.upper, as: .bollingerUpper)
+                append(bands.lower, as: .bollingerLower)
+            case .bollingerBands50:
+                let bands = bollingerBands(period: 50, points: points)
+                append(bands.mid, as: .bollinger50Mid)
+                append(bands.upper, as: .bollinger50Upper)
+                append(bands.lower, as: .bollinger50Lower)
             case .donchianChannel:
                 let channel = donchianChannel(period: 20, points: points)
-                overlays.append(contentsOf: overlaysForSeries(channel.upper, indicator: .donchianUpper, futureUpperBound: futureUpperBound))
-                overlays.append(contentsOf: overlaysForSeries(channel.lower, indicator: .donchianLower, futureUpperBound: futureUpperBound))
+                append(channel.upper, as: .donchianUpper)
+                append(channel.lower, as: .donchianLower)
+            case .donchian55:
+                let channel = donchianChannel(period: 55, points: points)
+                append(channel.upper, as: .donchian55Upper)
+                append(channel.lower, as: .donchian55Lower)
             case .keltnerChannel:
                 let channel = keltnerChannel(period: 20, multiplier: 1.5, points: points)
-                overlays.append(contentsOf: overlaysForSeries(channel.mid, indicator: .keltnerMid, futureUpperBound: futureUpperBound))
-                overlays.append(contentsOf: overlaysForSeries(channel.upper, indicator: .keltnerUpper, futureUpperBound: futureUpperBound))
-                overlays.append(contentsOf: overlaysForSeries(channel.lower, indicator: .keltnerLower, futureUpperBound: futureUpperBound))
-            case .bollingerMid, .bollingerUpper, .bollingerLower, .donchianUpper, .donchianLower, .keltnerMid, .keltnerUpper, .keltnerLower:
+                append(channel.mid, as: .keltnerMid)
+                append(channel.upper, as: .keltnerUpper)
+                append(channel.lower, as: .keltnerLower)
+            case .atrBands:
+                let bands = atrBands(period: 14, multiplier: 2.0, points: points)
+                append(bands.upper, as: .atrUpper)
+                append(bands.lower, as: .atrLower)
+            case .regressionChannel:
+                let channel = regressionChannel(period: min(max(points.count / 2, 20), 120), points: points)
+                append(channel.mid, as: .regressionMid)
+                append(channel.upper, as: .regressionUpper)
+                append(channel.lower, as: .regressionLower)
+            case .trendDrift:
+                appendFuture(trendDriftProjection(points: points, futureUpperBound: futureUpperBound), as: indicator)
+            case .meanReversion:
+                appendFuture(meanReversionProjection(points: points, futureUpperBound: futureUpperBound), as: indicator)
+            case .vwapCarry:
+                appendFuture(vwapCarryProjection(points: points, futureUpperBound: futureUpperBound), as: indicator)
+            case .volatilityCone:
+                let cone = volatilityConeProjection(points: points, futureUpperBound: futureUpperBound)
+                appendFuture(cone.mid, as: .volatilityConeMid)
+                appendFuture(cone.upper, as: .volatilityConeUpper)
+                appendFuture(cone.lower, as: .volatilityConeLower)
+            case .bollingerMid, .bollingerUpper, .bollingerLower,
+                 .bollinger50Mid, .bollinger50Upper, .bollinger50Lower,
+                 .donchianUpper, .donchianLower, .donchian55Upper, .donchian55Lower,
+                 .keltnerMid, .keltnerUpper, .keltnerLower,
+                 .atrUpper, .atrLower, .regressionMid, .regressionUpper, .regressionLower,
+                 .volatilityConeMid, .volatilityConeUpper, .volatilityConeLower:
                 continue
             }
         }
@@ -1578,38 +1952,51 @@ private struct ChartStage: View {
     private func overlaysForSeries(
         _ series: [IndicatorPoint],
         indicator: ForesightIndicator,
+        visibleDomain: ClosedRange<Date>,
         futureUpperBound: Date
     ) -> [IndicatorOverlay] {
-        guard series.count > 1 else { return [] }
+        let visibleSeries = clippedIndicatorSeries(series, to: visibleDomain)
+        guard visibleSeries.count > 1 else { return [] }
 
-        var overlays = [
+        return [
             IndicatorOverlay(
                 id: "\(indicator.id)-live",
+                label: indicator.tooltipTitle,
                 color: indicator.color,
                 lineWidth: indicator.lineWidth,
                 dashed: false,
-                points: series
+                points: visibleSeries
             )
         ]
+    }
 
-        if foresightRange != .off,
-           let last = series.last,
-           futureUpperBound > last.date {
-            overlays.append(
-                IndicatorOverlay(
-                    id: "\(indicator.id)-future",
-                    color: indicator.color.opacity(0.78),
-                    lineWidth: indicator.lineWidth,
-                    dashed: true,
-                    points: [
-                        last,
-                        IndicatorPoint(date: futureUpperBound, value: last.value)
-                    ]
-                )
+    private func futureOverlaysForSeries(
+        _ series: [IndicatorPoint],
+        indicator: ForesightIndicator,
+        latestActualDate: Date?,
+        futureUpperBound: Date
+    ) -> [IndicatorOverlay] {
+        guard foresightRange != .off,
+              let latestActualDate,
+              futureUpperBound > latestActualDate else { return [] }
+
+        let futureSeries = clippedFutureIndicatorSeries(
+            series,
+            from: latestActualDate,
+            to: futureUpperBound
+        )
+        guard futureSeries.count > 1 else { return [] }
+
+        return [
+            IndicatorOverlay(
+                id: "\(indicator.id)-future",
+                label: indicator.tooltipTitle,
+                color: indicator.color.opacity(0.88),
+                lineWidth: indicator.lineWidth,
+                dashed: true,
+                points: futureSeries
             )
-        }
-
-        return overlays
+        ]
     }
 
     private func emaSeries(period: Int, points: [GraphPoint]) -> [IndicatorPoint] {
@@ -1652,16 +2039,105 @@ private struct ChartStage: View {
         return result
     }
 
+    private func wmaSeries(period: Int, points: [GraphPoint]) -> [IndicatorPoint] {
+        guard points.count >= period else { return [] }
+
+        let weightTotal = Double(period * (period + 1)) / 2.0
+        var result: [IndicatorPoint] = []
+        result.reserveCapacity(points.count - period + 1)
+
+        for index in (period - 1)..<points.count {
+            var weightedSum = 0.0
+            let start = index - period + 1
+
+            for offset in 0..<period {
+                weightedSum += points[start + offset].value * Double(offset + 1)
+            }
+
+            result.append(IndicatorPoint(date: points[index].date, value: weightedSum / weightTotal))
+        }
+
+        return result
+    }
+
+    private func hmaSeries(period: Int, points: [GraphPoint]) -> [IndicatorPoint] {
+        guard points.count >= period else { return [] }
+
+        let halfPeriod = max(period / 2, 1)
+        let sqrtPeriod = max(Int(round(sqrt(Double(period)))), 1)
+        let half = wmaSeries(period: halfPeriod, points: points)
+        let full = wmaSeries(period: period, points: points)
+        let halfByDate = Dictionary(uniqueKeysWithValues: half.map { ($0.date.timeIntervalSince1970, $0.value) })
+
+        let rawBase: [GraphPoint] = full.compactMap { (point: IndicatorPoint) -> GraphPoint? in
+            guard let halfValue = halfByDate[point.date.timeIntervalSince1970] else { return nil }
+            return GraphPoint(
+                index: 0,
+                date: point.date,
+                value: (2 * halfValue) - point.value,
+                volume: nil
+            )
+        }
+
+        let rawPoints = rawBase.enumerated().map { index, point in
+            GraphPoint(index: index, date: point.date, value: point.value, volume: point.volume)
+        }
+
+        return wmaSeries(period: sqrtPeriod, points: rawPoints)
+    }
+
+    private func previousCloseSeries(
+        points: [GraphPoint],
+        visibleDomain: ClosedRange<Date>,
+        futureUpperBound: Date
+    ) -> [IndicatorPoint] {
+        guard points.count > 1 else { return [] }
+
+        let firstVisibleIndex = points.firstIndex { $0.date >= visibleDomain.lowerBound } ?? points.indices.last
+        guard let firstVisibleIndex else { return [] }
+
+        var sessionStartIndex = firstVisibleIndex
+        while sessionStartIndex > points.startIndex,
+              !shouldResetSessionCalculation(from: points[sessionStartIndex - 1], to: points[sessionStartIndex]) {
+            sessionStartIndex -= 1
+        }
+
+        let closeIndex: Int?
+        if sessionStartIndex > points.startIndex {
+            closeIndex = points.index(before: sessionStartIndex)
+        } else if firstVisibleIndex > points.startIndex {
+            closeIndex = points.index(before: firstVisibleIndex)
+        } else {
+            closeIndex = nil
+        }
+        guard let closeIndex, points.indices.contains(closeIndex) else { return [] }
+
+        let value = points[closeIndex].value
+        return [
+            IndicatorPoint(date: visibleDomain.lowerBound, value: value),
+            IndicatorPoint(date: futureUpperBound, value: value)
+        ]
+    }
+
     private func vwapSeries(points: [GraphPoint]) -> [IndicatorPoint] {
         guard !points.isEmpty else { return [] }
 
         var weightedValue = 0.0
         var totalWeight = 0.0
         var fallbackSum = 0.0
+        var sessionSampleCount = 0
         var result: [IndicatorPoint] = []
         result.reserveCapacity(points.count)
 
         for (index, point) in points.enumerated() {
+            if index > 0, shouldResetSessionCalculation(from: points[index - 1], to: point) {
+                weightedValue = 0
+                totalWeight = 0
+                fallbackSum = 0
+                sessionSampleCount = 0
+            }
+
+            sessionSampleCount += 1
             let volumeWeight = max(point.volume ?? 0, 0)
             if volumeWeight > 0 {
                 weightedValue += point.value * volumeWeight
@@ -1674,7 +2150,7 @@ private struct ChartStage: View {
             if totalWeight > 0 {
                 value = weightedValue / totalWeight
             } else {
-                value = fallbackSum / Double(index + 1)
+                value = fallbackSum / Double(max(sessionSampleCount, 1))
             }
 
             result.append(IndicatorPoint(date: point.date, value: value))
@@ -1744,8 +2220,16 @@ private struct ChartStage: View {
         let mid = emaSeries(period: period, points: points)
         guard !mid.isEmpty else { return ([], [], []) }
 
-        let rangeValues = points.map { point in
-            point.index == 0 ? 0 : abs(point.value - points[max(point.index - 1, 0)].value)
+        var rangeValues: [Double] = [0]
+        rangeValues.reserveCapacity(points.count)
+
+        for index in points.indices.dropFirst() {
+            let previous = points[index - 1]
+            let current = points[index]
+            let range = shouldResetSessionCalculation(from: previous, to: current)
+                ? 0
+                : abs(current.value - previous.value)
+            rangeValues.append(range)
         }
 
         var atrSeries: [Double] = []
@@ -1779,9 +2263,197 @@ private struct ChartStage: View {
         return (Array(mid.prefix(alignedCount)), upper, lower)
     }
 
+    private func atrBands(
+        period: Int,
+        multiplier: Double,
+        points: [GraphPoint]
+    ) -> (upper: [IndicatorPoint], lower: [IndicatorPoint]) {
+        let channel = keltnerChannel(period: period, multiplier: multiplier, points: points)
+        return (channel.upper, channel.lower)
+    }
+
+    private func regressionChannel(
+        period: Int,
+        points: [GraphPoint]
+    ) -> (mid: [IndicatorPoint], upper: [IndicatorPoint], lower: [IndicatorPoint]) {
+        guard period > 1, points.count >= period else { return ([], [], []) }
+
+        let xValues = (0..<period).map(Double.init)
+        let xMean = xValues.reduce(0, +) / Double(period)
+        let xVariance = xValues.reduce(0) { partial, value in
+            partial + pow(value - xMean, 2)
+        }
+
+        var mid: [IndicatorPoint] = []
+        var upper: [IndicatorPoint] = []
+        var lower: [IndicatorPoint] = []
+        mid.reserveCapacity(points.count - period + 1)
+        upper.reserveCapacity(points.count - period + 1)
+        lower.reserveCapacity(points.count - period + 1)
+
+        for index in (period - 1)..<points.count {
+            let window = Array(points[(index - period + 1)...index])
+            let yValues = window.map(\.value)
+            let yMean = yValues.reduce(0, +) / Double(period)
+            let covariance = zip(xValues, yValues).reduce(0) { partial, sample in
+                partial + ((sample.0 - xMean) * (sample.1 - yMean))
+            }
+            let slope = xVariance > 0 ? covariance / xVariance : 0
+            let intercept = yMean - slope * xMean
+            let fitted = intercept + slope * Double(period - 1)
+            let residualStdDev = sqrt(
+                zip(xValues, yValues).reduce(0) { partial, sample in
+                    let estimate = intercept + slope * sample.0
+                    return partial + pow(sample.1 - estimate, 2)
+                } / Double(period)
+            )
+            let date = points[index].date
+
+            mid.append(IndicatorPoint(date: date, value: fitted))
+            upper.append(IndicatorPoint(date: date, value: fitted + residualStdDev * 2))
+            lower.append(IndicatorPoint(date: date, value: fitted - residualStdDev * 2))
+        }
+
+        return (mid, upper, lower)
+    }
+
+    private func trendDriftProjection(
+        points: [GraphPoint],
+        futureUpperBound: Date
+    ) -> [IndicatorPoint] {
+        guard let lastPoint = points.last else { return [] }
+
+        let window = Array(points.suffix(min(max(12, points.count / 3), 48)))
+        let dates = projectionDates(from: points, to: futureUpperBound)
+        guard window.count > 1, dates.count > 1 else { return [] }
+
+        let slope = projectedSlope(for: window) * 0.9
+        return dates.enumerated().map { index, date in
+            IndicatorPoint(
+                date: date,
+                value: lastPoint.value + (slope * Double(index))
+            )
+        }
+    }
+
+    private func meanReversionProjection(
+        points: [GraphPoint],
+        futureUpperBound: Date
+    ) -> [IndicatorPoint] {
+        guard let lastPoint = points.last else { return [] }
+
+        let dates = projectionDates(from: points, to: futureUpperBound)
+        guard dates.count > 1 else { return [] }
+
+        let anchor = emaSeries(period: min(max(12, points.count / 4), 20), points: points).last?.value
+            ?? smaSeries(period: min(max(8, points.count / 5), 20), points: points).last?.value
+            ?? lastPoint.value
+        let drift = projectedSlope(for: Array(points.suffix(min(max(8, points.count / 4), 24)))) * 0.2
+
+        return dates.enumerated().map { index, date in
+            let progress = Double(index) / Double(max(dates.count - 1, 1))
+            let reversion = 1 - exp(-2.8 * progress)
+            let value = lastPoint.value
+                + ((anchor - lastPoint.value) * reversion)
+                + (drift * Double(index))
+            return IndicatorPoint(date: date, value: value)
+        }
+    }
+
+    private func vwapCarryProjection(
+        points: [GraphPoint],
+        futureUpperBound: Date
+    ) -> [IndicatorPoint] {
+        guard !points.isEmpty else { return [] }
+
+        let dates = projectionDates(from: points, to: futureUpperBound)
+        guard dates.count > 1 else { return [] }
+
+        let anchor = vwapSeries(points: points).last?.value ?? points.last?.value ?? 0
+        return dates.map { date in
+            IndicatorPoint(date: date, value: anchor)
+        }
+    }
+
+    private func volatilityConeProjection(
+        points: [GraphPoint],
+        futureUpperBound: Date
+    ) -> (mid: [IndicatorPoint], upper: [IndicatorPoint], lower: [IndicatorPoint]) {
+        let mid = trendDriftProjection(points: points, futureUpperBound: futureUpperBound)
+        guard mid.count > 1 else { return ([], [], []) }
+
+        let deltas = zip(points.dropFirst(), points).map { current, previous in
+            abs(current.value - previous.value)
+        }
+        let recentDeltas = Array(deltas.suffix(min(max(10, deltas.count / 3), 40)))
+        let averageDelta = recentDeltas.isEmpty
+            ? max((points.last?.value ?? 1) * 0.0015, 0.01)
+            : recentDeltas.reduce(0, +) / Double(recentDeltas.count)
+        let baseBand = max(averageDelta * 1.6, max((points.last?.value ?? 1) * 0.0015, 0.01))
+
+        let upper = mid.enumerated().map { index, point in
+            let progress = Double(index) / Double(max(mid.count - 1, 1))
+            let expansion = 0.65 + (sqrt(progress) * 1.55)
+            return IndicatorPoint(date: point.date, value: point.value + (baseBand * expansion))
+        }
+        let lower = mid.enumerated().map { index, point in
+            let progress = Double(index) / Double(max(mid.count - 1, 1))
+            let expansion = 0.65 + (sqrt(progress) * 1.55)
+            return IndicatorPoint(date: point.date, value: point.value - (baseBand * expansion))
+        }
+
+        return (mid, upper, lower)
+    }
+
+    private func projectionDates(
+        from points: [GraphPoint],
+        to futureUpperBound: Date
+    ) -> [Date] {
+        guard let lastDate = points.last?.date, futureUpperBound > lastDate else { return [] }
+
+        let totalDuration = futureUpperBound.timeIntervalSince(lastDate)
+        let intervals = zip(points.dropFirst(), points).map { current, previous in
+            max(current.date.timeIntervalSince(previous.date), 0)
+        }.filter { $0 > 0 }
+        let recentIntervals = Array(intervals.suffix(12)).sorted()
+        let cadence = recentIntervals.isEmpty
+            ? totalDuration / 18
+            : recentIntervals[recentIntervals.count / 2]
+        let estimatedCount = Int(ceil(totalDuration / max(cadence, 1)))
+        let stepCount = max(8, min(28, estimatedCount))
+
+        return (0...stepCount).map { step in
+            lastDate.addingTimeInterval((totalDuration * Double(step)) / Double(stepCount))
+        }
+    }
+
+    private func projectedSlope(for points: [GraphPoint]) -> Double {
+        guard points.count > 1 else { return 0 }
+
+        let xValues = (0..<points.count).map(Double.init)
+        let yValues = points.map(\.value)
+        let xMean = xValues.reduce(0, +) / Double(xValues.count)
+        let yMean = yValues.reduce(0, +) / Double(yValues.count)
+        let numerator = zip(xValues, yValues).reduce(0) { partial, sample in
+            partial + ((sample.0 - xMean) * (sample.1 - yMean))
+        }
+        let denominator = xValues.reduce(0) { partial, value in
+            partial + pow(value - xMean, 2)
+        }
+
+        guard denominator > 0 else { return 0 }
+        return numerator / denominator
+    }
+
+    private func shouldResetSessionCalculation(from previous: GraphPoint, to current: GraphPoint) -> Bool {
+        instrumentType == .equity
+            && current.date.timeIntervalSince(previous.date) > adaptiveMaximumRenderableGap
+    }
+
     private func axisLabelOverlay(
         size: CGSize,
         xDomain: ClosedRange<Date>,
+        xProjection: XAxisProjection?,
         yAxis: YAxisConfiguration,
         xTicks: [Date],
         labels: [Date: String]
@@ -1808,7 +2480,7 @@ private struct ChartStage: View {
                     .lineLimit(2)
                     .frame(width: 74)
                     .position(
-                        x: xPosition(for: tick, in: plot, xDomain: xDomain),
+                        x: xPosition(for: tick, in: plot, xDomain: xDomain, projection: xProjection),
                         y: plot.maxY + 24
                     )
             }
@@ -1818,13 +2490,16 @@ private struct ChartStage: View {
 
     private func hoverOverlay(
         point: GraphPoint,
+        indicatorOverlays: [IndicatorOverlay],
         plot: CGRect,
         xDomain: ClosedRange<Date>,
+        xProjection: XAxisProjection?,
         yAxis: YAxisConfiguration
     ) -> some View {
-        let location = position(for: point, in: plot, xDomain: xDomain, yDomain: yAxis.domain)
+        let location = position(for: point, in: plot, xDomain: xDomain, projection: xProjection, yDomain: yAxis.domain)
         let tooltipX = min(max(location.x + 88, plot.minX + 96), plot.maxX - 96)
         let tooltipY = min(max(location.y - 46, plot.minY + 34), plot.maxY - 34)
+        let indicatorValues = hoverIndicatorValues(for: point.date, overlays: indicatorOverlays)
 
         return ZStack(alignment: .topLeading) {
             Path { path in
@@ -1847,6 +2522,37 @@ private struct ChartStage: View {
                 Text(Self.hoverFormatter.string(from: point.date))
                     .font(.system(size: 10.5, weight: .medium, design: .default))
                     .foregroundStyle(.white.opacity(0.48))
+
+                if !indicatorValues.isEmpty {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(height: 1)
+                        .padding(.top, 4)
+                        .padding(.bottom, 2)
+
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 5) {
+                            ForEach(indicatorValues) { indicatorValue in
+                                HStack(spacing: 8) {
+                                    Circle()
+                                        .fill(indicatorValue.color)
+                                        .frame(width: 6, height: 6)
+
+                                    Text(indicatorValue.label)
+                                        .font(.system(size: 10.5, weight: .semibold))
+                                        .foregroundStyle(.white.opacity(0.68))
+
+                                    Spacer(minLength: 8)
+
+                                    Text(indicatorValue.formattedValue)
+                                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(.white.opacity(0.90))
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 164)
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -1863,20 +2569,72 @@ private struct ChartStage: View {
         .allowsHitTesting(false)
     }
 
+    private func hoverIndicatorValues(
+        for date: Date,
+        overlays: [IndicatorOverlay]
+    ) -> [HoverIndicatorValue] {
+        overlays.compactMap { overlay in
+            guard let value = interpolatedIndicatorValue(in: overlay, at: date) else { return nil }
+            return HoverIndicatorValue(
+                id: overlay.id,
+                label: overlay.label,
+                formattedValue: value.formatted(.number.precision(.fractionLength(2))),
+                color: overlay.color
+            )
+        }
+    }
+
+    private func interpolatedIndicatorValue(
+        in overlay: IndicatorOverlay,
+        at date: Date
+    ) -> Double? {
+        guard let first = overlay.points.first, let last = overlay.points.last else { return nil }
+        guard date >= first.date, date <= last.date else { return nil }
+
+        if let exact = overlay.points.first(where: { abs($0.date.timeIntervalSince(date)) < 0.5 }) {
+            return exact.value
+        }
+
+        for index in 1..<overlay.points.count {
+            let previous = overlay.points[index - 1]
+            let current = overlay.points[index]
+
+            if date <= current.date {
+                let span = current.date.timeIntervalSince(previous.date)
+                guard span > 0 else { return current.value }
+                let progress = date.timeIntervalSince(previous.date) / span
+                return previous.value + ((current.value - previous.value) * progress)
+            }
+        }
+
+        return last.value
+    }
+
     private func position(
         for point: GraphPoint,
         in plot: CGRect,
         xDomain: ClosedRange<Date>,
+        projection: XAxisProjection?,
         yDomain: ClosedRange<Double>
     ) -> CGPoint {
-        let x = xPosition(for: point.date, in: plot, xDomain: xDomain)
+        let x = xPosition(for: point.date, in: plot, xDomain: xDomain, projection: projection)
         let y = yPosition(for: point.value, in: plot, yDomain: yDomain)
         return CGPoint(x: x, y: y)
     }
 
-    private func xPosition(for date: Date, in plot: CGRect, xDomain: ClosedRange<Date>) -> CGFloat {
-        let span = max(xDomain.upperBound.timeIntervalSince(xDomain.lowerBound), 1)
-        let progress = date.timeIntervalSince(xDomain.lowerBound) / span
+    private func xPosition(
+        for date: Date,
+        in plot: CGRect,
+        xDomain: ClosedRange<Date>,
+        projection: XAxisProjection?
+    ) -> CGFloat {
+        let progress: Double
+        if let projection {
+            progress = projection.progress(for: date)
+        } else {
+            let span = max(xDomain.upperBound.timeIntervalSince(xDomain.lowerBound), 1)
+            progress = date.timeIntervalSince(xDomain.lowerBound) / span
+        }
         return plot.minX + CGFloat(progress.clamped(to: 0...1)) * plot.width
     }
 
@@ -1890,7 +2648,8 @@ private struct ChartStage: View {
         to location: CGPoint?,
         in plot: CGRect,
         points: [GraphPoint],
-        xDomain: ClosedRange<Date>
+        xDomain: ClosedRange<Date>,
+        projection: XAxisProjection?
     ) -> GraphPoint? {
         guard
             let location,
@@ -1901,7 +2660,7 @@ private struct ChartStage: View {
         }
 
         if let latestDate = points.last?.date {
-            let latestX = xPosition(for: latestDate, in: plot, xDomain: xDomain)
+            let latestX = xPosition(for: latestDate, in: plot, xDomain: xDomain, projection: projection)
             if location.x > latestX + 8 {
                 return nil
             }
@@ -1909,8 +2668,13 @@ private struct ChartStage: View {
 
         let rawProgress = Double((location.x - plot.minX) / max(plot.width, 1))
         let progress = rawProgress.clamped(to: 0...1)
-        let targetTime = xDomain.lowerBound.timeIntervalSince1970
-            + xDomain.upperBound.timeIntervalSince(xDomain.lowerBound) * progress
+        let targetTime: TimeInterval
+        if let projection {
+            targetTime = projection.date(at: progress).timeIntervalSince1970
+        } else {
+            targetTime = xDomain.lowerBound.timeIntervalSince1970
+                + xDomain.upperBound.timeIntervalSince(xDomain.lowerBound) * progress
+        }
 
         return points.min { lhs, rhs in
             abs(lhs.date.timeIntervalSince1970 - targetTime) < abs(rhs.date.timeIntervalSince1970 - targetTime)
@@ -1950,9 +2714,41 @@ private struct ChartStage: View {
 
     private func targetXDomain() -> ClosedRange<Date>? {
         guard let latestDate = points.last?.date else { return nil }
-        let lowerBound = latestDate.addingTimeInterval(-selectedRange.marketTimeRange.duration)
         let upperBound = latestDate.addingTimeInterval(foresightRange.duration)
+
+        if instrumentType == .equity,
+           let equityDomain = equityTargetXDomain(latestDate: latestDate, upperBound: upperBound) {
+            return equityDomain
+        }
+
+        let lowerBound = latestDate.addingTimeInterval(-selectedRange.marketTimeRange.duration)
         return lowerBound...upperBound
+    }
+
+    private func equityTargetXDomain(latestDate: Date, upperBound: Date) -> ClosedRange<Date>? {
+        let ordered = chartRenderablePoints()
+        guard
+            let firstDate = ordered.first?.date,
+            firstDate < latestDate
+        else {
+            return nil
+        }
+
+        let duration = selectedRange.marketTimeRange.duration
+        let dataSpan = latestDate.timeIntervalSince(firstDate)
+        let shouldUseDataSpan = selectedRange == .day
+            || selectedRange == .week
+            || selectedRange == .month
+            || selectedRange == .quarter
+            || selectedRange == .year
+            || dataSpan < duration * 0.85
+
+        guard shouldUseDataSpan else {
+            return nil
+        }
+
+        let padding = min(max(dataSpan * 0.025, 60), duration * 0.05)
+        return firstDate.addingTimeInterval(-padding)...upperBound
     }
 
     private func fallbackXDomain() -> ClosedRange<Date> {
@@ -1976,8 +2772,8 @@ private struct ChartStage: View {
 
         let shift = abs(target.upperBound.timeIntervalSince(displayedXDomain.upperBound))
         let cadence = max(medianPointCadence, 1)
-        let normalized = min(max(shift / cadence, 0.65), 1.6)
-        return 0.26 * normalized
+        let normalized = min(max(shift / cadence, 0.55), 1.25)
+        return 0.14 * normalized
     }
 
     private func smoothedYAxisConfiguration(reset: Bool) -> YAxisConfiguration {
@@ -1993,7 +2789,10 @@ private struct ChartStage: View {
         let targetFitsCurrent = targetDomain.lowerBound >= currentDomain.lowerBound
             && targetDomain.upperBound <= currentDomain.upperBound
 
-        if targetFitsCurrent, currentSpan <= targetSpan * 1.8 {
+        // Preserve the existing axis only while the target is expanding or staying
+        // effectively the same. If the required range contracts, snap back so the
+        // chart does not keep stale headroom after indicators are removed.
+        if targetSpan >= currentSpan, targetFitsCurrent, currentSpan <= targetSpan * 1.8 {
             return current
         }
 
@@ -2013,7 +2812,11 @@ private struct ChartStage: View {
         return sorted[sorted.count / 2]
     }
 
-    private func adaptiveXAxisTicks(plotWidth: CGFloat, domain: ClosedRange<Date>) -> [Date] {
+    private func adaptiveXAxisTicks(
+        plotWidth: CGFloat,
+        domain: ClosedRange<Date>,
+        projection: XAxisProjection?
+    ) -> [Date] {
         let first = domain.lowerBound
         let last = domain.upperBound
 
@@ -2029,6 +2832,13 @@ private struct ChartStage: View {
         case .year: 6
         }
         let targetCount = max(3, min(maxTickCount, preferredTickCount))
+
+        if let projection {
+            let projectedTicks = projection.tickDates(targetCount: targetCount)
+            if projectedTicks.count >= 2 {
+                return projectedTicks
+            }
+        }
 
         let totalSeconds = last.timeIntervalSince(first)
         let rawStep = totalSeconds / Double(max(targetCount - 1, 1))
@@ -2074,6 +2884,235 @@ private struct ChartStage: View {
         }
 
         return deduped
+    }
+
+    private func indicatorRenderablePoints() -> [GraphPoint] {
+        var ordered = indicatorPoints
+        if !isSortedByDate(ordered) {
+            ordered.sort { $0.date < $1.date }
+        }
+        guard !ordered.isEmpty else { return [] }
+
+        var deduped: [GraphPoint] = []
+        deduped.reserveCapacity(ordered.count)
+
+        for (displayIndex, point) in ordered.enumerated() {
+            let normalizedPoint = GraphPoint(
+                index: displayIndex,
+                date: point.date,
+                value: point.value,
+                volume: point.volume
+            )
+
+            if let last = deduped.last, last.date == point.date {
+                deduped[deduped.count - 1] = normalizedPoint
+            } else {
+                deduped.append(normalizedPoint)
+            }
+        }
+
+        return deduped
+    }
+
+    private func clippedIndicatorSeries(
+        _ series: [IndicatorPoint],
+        to visibleDomain: ClosedRange<Date>
+    ) -> [IndicatorPoint] {
+        guard !series.isEmpty else { return [] }
+
+        var clipped: [IndicatorPoint] = []
+        clipped.reserveCapacity(series.count)
+        var previous: IndicatorPoint?
+
+        for point in series {
+            if point.date < visibleDomain.lowerBound {
+                previous = point
+                continue
+            }
+
+            if point.date > visibleDomain.upperBound {
+                break
+            }
+
+            if clipped.isEmpty, let previous {
+                clipped.append(IndicatorPoint(date: visibleDomain.lowerBound, value: previous.value))
+            }
+            clipped.append(point)
+        }
+
+        if clipped.isEmpty,
+           let previous,
+           let firstAfter = series.first(where: { $0.date > visibleDomain.lowerBound }) {
+            clipped.append(IndicatorPoint(date: visibleDomain.lowerBound, value: previous.value))
+            clipped.append(firstAfter)
+        }
+
+        return clipped
+    }
+
+    private func clippedFutureIndicatorSeries(
+        _ series: [IndicatorPoint],
+        from startDate: Date,
+        to endDate: Date
+    ) -> [IndicatorPoint] {
+        guard !series.isEmpty, endDate > startDate else { return [] }
+
+        var clipped: [IndicatorPoint] = []
+        clipped.reserveCapacity(series.count)
+        var previous: IndicatorPoint?
+
+        for point in series {
+            if point.date < startDate {
+                previous = point
+                continue
+            }
+
+            if point.date > endDate {
+                break
+            }
+
+            if clipped.isEmpty, let previous {
+                clipped.append(IndicatorPoint(date: startDate, value: previous.value))
+            }
+            clipped.append(point)
+        }
+
+        if clipped.isEmpty,
+           let previous,
+           let firstAfter = series.first(where: { $0.date > startDate }) {
+            clipped.append(IndicatorPoint(date: startDate, value: previous.value))
+            clipped.append(firstAfter)
+        }
+
+        if let last = clipped.last, last.date < endDate {
+            clipped.append(IndicatorPoint(date: endDate, value: last.value))
+        }
+
+        return clipped
+    }
+
+    private func segmentedRenderablePoints(from points: [GraphPoint]) -> [[GraphPoint]] {
+        guard points.count > 1 else { return points.isEmpty ? [] : [points] }
+
+        let gapLimit = adaptiveMaximumRenderableGap
+        var segments: [[GraphPoint]] = []
+        var current: [GraphPoint] = []
+        current.reserveCapacity(points.count)
+
+        for point in points {
+            if let last = current.last,
+               point.date.timeIntervalSince(last.date) > gapLimit {
+                if !current.isEmpty {
+                    segments.append(current)
+                }
+                current = [point]
+            } else {
+                current.append(point)
+            }
+        }
+
+        if !current.isEmpty {
+            segments.append(current)
+        }
+
+        return segments
+    }
+
+    private func segmentedIndicatorPoints(from points: [IndicatorPoint]) -> [[IndicatorPoint]] {
+        guard points.count > 1 else { return points.isEmpty ? [] : [points] }
+
+        let gapLimit = adaptiveMaximumRenderableGap
+        var segments: [[IndicatorPoint]] = []
+        var current: [IndicatorPoint] = []
+        current.reserveCapacity(points.count)
+
+        for point in points {
+            if let last = current.last,
+               point.date.timeIntervalSince(last.date) > gapLimit {
+                if !current.isEmpty {
+                    segments.append(current)
+                }
+                current = [point]
+            } else {
+                current.append(point)
+            }
+        }
+
+        if !current.isEmpty {
+            segments.append(current)
+        }
+
+        return segments
+    }
+
+    private func makeXAxisProjection(
+        domain: ClosedRange<Date>,
+        pointSegments: [[GraphPoint]]
+    ) -> XAxisProjection? {
+        guard instrumentType == .equity, pointSegments.count > 0 else { return nil }
+
+        let sessionSeparator = min(max(medianPointCadence, 60), 3 * 60)
+        var intervals: [XAxisProjection.Interval] = []
+        var cursor: TimeInterval = 0
+
+        for segment in pointSegments {
+            guard
+                let first = segment.first?.date,
+                let last = segment.last?.date
+            else {
+                continue
+            }
+
+            let actualStart = max(first, domain.lowerBound)
+            let actualEnd = min(last, domain.upperBound)
+            guard actualEnd >= actualStart else { continue }
+
+            if !intervals.isEmpty {
+                cursor += sessionSeparator
+            }
+
+            let duration = max(actualEnd.timeIntervalSince(actualStart), medianPointCadence)
+            intervals.append(
+                XAxisProjection.Interval(
+                    actualStart: actualStart,
+                    actualEnd: actualEnd,
+                    projectedStart: cursor,
+                    projectedEnd: cursor + duration
+                )
+            )
+            cursor += duration
+        }
+
+        guard !intervals.isEmpty, cursor > 0 else { return nil }
+
+        if let last = intervals.last, domain.upperBound > last.actualEnd {
+            cursor += domain.upperBound.timeIntervalSince(last.actualEnd)
+        }
+
+        return XAxisProjection(intervals: intervals, totalDuration: max(cursor, 1))
+    }
+
+    private func drawSessionGapMarkers(
+        context: inout GraphicsContext,
+        pointSegments: [[GraphPoint]],
+        plot: CGRect,
+        xDomain: ClosedRange<Date>,
+        projection: XAxisProjection?
+    ) {
+        guard instrumentType == .equity, pointSegments.count > 1 else { return }
+
+        for segment in pointSegments.dropFirst() {
+            guard let first = segment.first else { continue }
+            let x = xPosition(for: first.date, in: plot, xDomain: xDomain, projection: projection)
+            var marker = Path()
+            marker.move(to: CGPoint(x: x, y: plot.maxY - 10))
+            marker.addLine(to: CGPoint(x: x, y: plot.maxY))
+            context.stroke(
+                marker,
+                with: .color(.white.opacity(0.11)),
+                style: StrokeStyle(lineWidth: 0.7, lineCap: .round)
+            )
+        }
     }
 
     private func isSortedByDate(_ points: [GraphPoint]) -> Bool {
@@ -2216,7 +3255,9 @@ private struct ChartTopControls: View {
         let isSaved = watchlist.contains(market.selectedInstrument)
 
         return Button {
-            watchlist.toggle(market.selectedInstrument)
+            withAnimation(Motion.spring) {
+                watchlist.toggle(market.selectedInstrument)
+            }
         } label: {
             Image(systemName: isSaved ? "star.fill" : "star")
                 .font(.system(size: 12.5, weight: .semibold))
@@ -2289,10 +3330,19 @@ private struct InstrumentSearchControl: View {
             .frame(width: width, height: 36)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.black.opacity(0.16))
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.08, green: 0.09, blue: 0.11).opacity(0.98),
+                                Color(red: 0.05, green: 0.06, blue: 0.08).opacity(0.98)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                            .stroke(Color.white.opacity(0.055), lineWidth: 1)
                     )
             )
 
@@ -2300,6 +3350,7 @@ private struct InstrumentSearchControl: View {
                 searchMenu
                     .offset(y: 41)
                     .zIndex(20)
+                    .transition(.opacity.combined(with: .move(edge: .top)).combined(with: .scale(scale: 0.98)))
             }
         }
         .frame(width: width, height: 36, alignment: .topLeading)
@@ -2321,6 +3372,7 @@ private struct InstrumentSearchControl: View {
         .onDisappear {
             removeKeyMonitor()
         }
+        .animation(Motion.spring, value: shouldShowResults)
     }
 
     private var searchMenu: some View {
@@ -2366,7 +3418,7 @@ private struct InstrumentSearchControl: View {
                 .fill(Color(red: 0.08, green: 0.095, blue: 0.11).opacity(0.98))
                 .overlay(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.05), lineWidth: 1)
                 )
         )
         .shadow(color: Color.black.opacity(0.26), radius: 18, x: 0, y: 14)
@@ -2414,6 +3466,7 @@ private struct InstrumentSearchControl: View {
                 highlightedResultID = instrument.id
             }
         }
+        .animation(Motion.spring, value: isHighlighted)
     }
 
     private func installKeyMonitor() {
@@ -2479,7 +3532,9 @@ private struct InstrumentSearchControl: View {
     }
 
     private func selectResult(_ instrument: InstrumentMetadata) {
-        market.selectInstrument(instrument)
+        withAnimation(Motion.spring) {
+            market.selectInstrument(instrument)
+        }
         highlightedResultID = nil
         isFocused = false
     }
@@ -2544,8 +3599,11 @@ private struct SyncStatusStrip: View {
         .frame(height: 27)
         .background(
             Capsule(style: .continuous)
-                .fill(Color.black.opacity(0.13))
-                .overlay(Capsule(style: .continuous).stroke(Color.white.opacity(0.065), lineWidth: 1))
+                .fill(Color(red: 0.07, green: 0.08, blue: 0.10).opacity(0.98))
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                )
         )
     }
 
@@ -2609,12 +3667,10 @@ private struct MarketSeriesLoadingOverlay: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(red: 0.07, green: 0.078, blue: 0.09).opacity(0.90))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
+            liquidGlassSurface(
+                RoundedRectangle(cornerRadius: 8, style: .continuous),
+                fallbackFill: Color(red: 0.07, green: 0.078, blue: 0.09).opacity(0.90)
+            )
         )
         .shadow(color: Color.black.opacity(0.22), radius: 18, x: 0, y: 12)
     }
@@ -2622,22 +3678,31 @@ private struct MarketSeriesLoadingOverlay: View {
 
 private struct AeviumRangeSelector: View {
     @Binding var selectedRange: ChartRange
+    @Namespace private var selectionNamespace
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(ChartRange.allCases) { range in
                 Button {
-                    selectedRange = range
+                    withAnimation(Motion.spring) {
+                        selectedRange = range
+                    }
                 } label: {
                     Text(range.rawValue)
                         .font(.system(size: 11, weight: .medium, design: .default))
                         .monospacedDigit()
                         .foregroundStyle(selectedRange == range ? .white.opacity(0.9) : .white.opacity(0.38))
                         .frame(width: 31, height: 27)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(selectedRange == range ? Color.white.opacity(0.105) : Color.clear)
-                        )
+                        .background {
+                            if selectedRange == range {
+                                liquidGlassSurface(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous),
+                                    fallbackFill: Color.white.opacity(0.105)
+                                )
+                                    .matchedGeometryEffect(id: "range-selection", in: selectionNamespace)
+                                    .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 4)
+                            }
+                        }
                 }
                 .buttonStyle(.plain)
             }
@@ -2645,10 +3710,10 @@ private struct AeviumRangeSelector: View {
         .padding(4)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.black.opacity(0.16))
+                .fill(Color(red: 0.07, green: 0.08, blue: 0.10).opacity(0.98))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.055), lineWidth: 1)
                 )
         )
     }
@@ -2656,22 +3721,31 @@ private struct AeviumRangeSelector: View {
 
 private struct ForesightSelector: View {
     @Binding var selectedForesight: ForesightRange
+    @Namespace private var selectionNamespace
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(ForesightRange.allCases) { range in
                 Button {
-                    selectedForesight = range
+                    withAnimation(Motion.spring) {
+                        selectedForesight = range
+                    }
                 } label: {
                     Text(range.rawValue)
                         .font(.system(size: 11, weight: .medium, design: .default))
                         .monospacedDigit()
                         .foregroundStyle(selectedForesight == range ? .white.opacity(0.9) : .white.opacity(0.38))
                         .frame(width: range == .off ? 34 : 36, height: 27)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(selectedForesight == range ? Color.white.opacity(0.105) : Color.clear)
-                        )
+                        .background {
+                            if selectedForesight == range {
+                                liquidGlassSurface(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous),
+                                    fallbackFill: Color.white.opacity(0.105)
+                                )
+                                    .matchedGeometryEffect(id: "foresight-selection", in: selectionNamespace)
+                                    .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 4)
+                            }
+                        }
                 }
                 .buttonStyle(.plain)
             }
@@ -2679,10 +3753,10 @@ private struct ForesightSelector: View {
         .padding(4)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.black.opacity(0.16))
+                .fill(Color(red: 0.07, green: 0.08, blue: 0.10).opacity(0.98))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.055), lineWidth: 1)
                 )
         )
         .help("Foresight horizon")
@@ -2693,8 +3767,9 @@ private struct IndicatorMenuButton: View {
     @Binding var selectedIndicators: Set<ForesightIndicator>
     @State private var isPopoverPresented = false
     private let columns = [
-        GridItem(.flexible(minimum: 132), spacing: 8),
-        GridItem(.flexible(minimum: 132), spacing: 8)
+        GridItem(.flexible(minimum: 168), spacing: 10),
+        GridItem(.flexible(minimum: 168), spacing: 10),
+        GridItem(.flexible(minimum: 168), spacing: 10)
     ]
 
     private var selectedCount: Int {
@@ -2703,7 +3778,9 @@ private struct IndicatorMenuButton: View {
 
     var body: some View {
         Button {
-            isPopoverPresented.toggle()
+            withAnimation(Motion.spring) {
+                isPopoverPresented.toggle()
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "waveform.path.ecg.rectangle")
@@ -2739,10 +3816,19 @@ private struct IndicatorMenuButton: View {
             .frame(width: 198, height: 35, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.black.opacity(isPopoverPresented ? 0.24 : 0.16))
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.08, green: 0.09, blue: 0.11).opacity(0.98),
+                                Color(red: 0.05, green: 0.06, blue: 0.08).opacity(0.98)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Color.white.opacity(isPopoverPresented ? 0.14 : 0.08), lineWidth: 1)
+                            .stroke(Color.white.opacity(isPopoverPresented ? 0.085 : 0.055), lineWidth: 1)
                     )
             )
         }
@@ -2770,49 +3856,60 @@ private struct IndicatorMenuButton: View {
 
                 HStack(spacing: 6) {
                     actionCapsule("All") {
-                        selectedIndicators = Set(ForesightIndicator.menuCases)
+                        withAnimation(Motion.spring) {
+                            selectedIndicators = Set(ForesightIndicator.menuCases)
+                        }
                     }
 
                     actionCapsule("Clear") {
-                        selectedIndicators.removeAll()
-                    }
-                }
-            }
-
-            ForEach(ForesightIndicatorGroup.allCases) { group in
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack {
-                        Text(group.title)
-                            .font(.system(size: 10.5, weight: .bold))
-                            .tracking(1.1)
-                            .foregroundStyle(.white.opacity(0.40))
-                        Spacer()
-                    }
-
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                        ForEach(group.indicators) { indicator in
-                            indicatorRow(for: indicator)
+                        withAnimation(Motion.spring) {
+                            selectedIndicators.removeAll()
                         }
                     }
                 }
-                .padding(.top, group == .allCases.first ? 0 : 2)
+            }
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(ForesightIndicatorGroup.allCases) { group in
+                        VStack(alignment: .leading, spacing: 9) {
+                            HStack {
+                                Text(group.title)
+                                    .font(.system(size: 10.5, weight: .bold))
+                                    .tracking(1.1)
+                                    .foregroundStyle(.white.opacity(0.40))
+                                Spacer()
+                            }
+
+                            LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+                                ForEach(group.indicators) { indicator in
+                                    indicatorRow(for: indicator)
+                                }
+                            }
+                        }
+                        .padding(.top, group == .allCases.first ? 0 : 2)
+                    }
+                }
             }
         }
         .padding(16)
-        .frame(width: 352)
+        .frame(width: 610)
+        .frame(maxHeight: 540)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(red: 0.08, green: 0.085, blue: 0.095))
+                .fill(Color(red: 0.08, green: 0.085, blue: 0.095).opacity(0.98))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.055), lineWidth: 1)
                 )
         )
     }
 
     private func indicatorRow(for indicator: ForesightIndicator) -> some View {
         Button {
-            toggle(indicator)
+            withAnimation(Motion.spring) {
+                toggle(indicator)
+            }
         } label: {
             HStack(spacing: 10) {
                 ZStack {
@@ -2840,15 +3937,16 @@ private struct IndicatorMenuButton: View {
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.white.opacity(selectedIndicators.contains(indicator) ? 0.075 : 0.03))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(selectedIndicators.contains(indicator) ? indicator.color.opacity(0.34) : Color.white.opacity(0.06), lineWidth: 1)
-                    )
+                liquidGlassSurface(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous),
+                    fallbackFill: Color.white.opacity(selectedIndicators.contains(indicator) ? 0.075 : 0.03),
+                    strokeOpacity: selectedIndicators.contains(indicator) ? 0.34 : 0.06
+                )
             )
         }
         .buttonStyle(.plain)
+        .hoverInsight(indicator.insight, delaySeconds: 0.45)
+        .animation(Motion.spring, value: selectedIndicators.contains(indicator))
     }
 
     private func actionCapsule(_ title: String, action: @escaping () -> Void) -> some View {
@@ -2859,12 +3957,11 @@ private struct IndicatorMenuButton: View {
                 .padding(.horizontal, 10)
                 .frame(height: 28)
                 .background(
-                    Capsule(style: .continuous)
-                        .fill(Color.white.opacity(0.05))
-                        .overlay(
-                            Capsule(style: .continuous)
-                                .stroke(Color.white.opacity(0.06), lineWidth: 1)
-                        )
+                    liquidGlassSurface(
+                        Capsule(style: .continuous),
+                        fallbackFill: Color.white.opacity(0.05),
+                        strokeOpacity: 0.06
+                    )
                 )
         }
         .buttonStyle(.plain)
@@ -2896,10 +3993,10 @@ private struct ChartResolutionControl: View {
         .frame(height: 35)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.black.opacity(0.16))
+                .fill(Color(red: 0.07, green: 0.08, blue: 0.10).opacity(0.98))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.055), lineWidth: 1)
                 )
         )
         .help("Chart smoothing from raw to super smooth")
@@ -2917,6 +4014,7 @@ private struct MarketInspector: View {
     let isUp: Bool
     @Binding var selectedPanel: InspectorPanel
     let onSelectWatchlistInstrument: (InstrumentMetadata) -> Void
+    @Namespace private var panelSelectionNamespace
 
     private var displaySymbol: String {
         instrumentSymbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
@@ -3096,7 +4194,11 @@ private struct MarketInspector: View {
             VStack(alignment: .leading, spacing: 12) {
                 instrumentHeroCard
                 panelSelector
-                selectedPanelContent
+                VStack(alignment: .leading, spacing: 10) {
+                    selectedPanelContent
+                }
+                .id(selectedPanel)
+                .transition(.opacity.combined(with: .move(edge: .top)).combined(with: .scale(scale: 0.985)))
             }
             .padding(.top, 22)
             .padding(.horizontal, 16)
@@ -3223,7 +4325,7 @@ private struct MarketInspector: View {
         HStack(spacing: 4) {
             ForEach(InspectorPanel.allCases) { panel in
                 Button {
-                    withAnimation(Motion.micro) {
+                    withAnimation(Motion.spring) {
                         selectedPanel = panel
                     }
                 } label: {
@@ -3231,15 +4333,21 @@ private struct MarketInspector: View {
                         Image(systemName: panel.icon)
                             .font(.system(size: 10.5, weight: .semibold))
                         Text(panel.rawValue)
-                            .font(.system(size: 10.5, weight: .semibold))
+                        .font(.system(size: 10.5, weight: .semibold))
                     }
                     .foregroundStyle(selectedPanel == panel ? .white.opacity(0.88) : .white.opacity(0.42))
                     .frame(maxWidth: .infinity)
                     .frame(height: 28)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(selectedPanel == panel ? Color.white.opacity(0.09) : Color.clear)
-                    )
+                    .background {
+                        if selectedPanel == panel {
+                            liquidGlassSurface(
+                                RoundedRectangle(cornerRadius: 7, style: .continuous),
+                                fallbackFill: Color.white.opacity(0.09)
+                            )
+                                .matchedGeometryEffect(id: "panel-selection", in: panelSelectionNamespace)
+                                .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 4)
+                        }
+                    }
                 }
                 .buttonStyle(.plain)
             }
@@ -3247,10 +4355,10 @@ private struct MarketInspector: View {
         .padding(4)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.black.opacity(0.16))
+                .fill(Color(red: 0.07, green: 0.08, blue: 0.10).opacity(0.98))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.055), lineWidth: 1)
                 )
         )
     }
@@ -3913,10 +5021,10 @@ private struct MarketInspector: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(red: 0.095, green: 0.102, blue: 0.118).opacity(0.82))
+                .fill(Color(red: 0.095, green: 0.102, blue: 0.118).opacity(0.92))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.white.opacity(0.075), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.05), lineWidth: 1)
                 )
                 .overlay(alignment: .top) {
                     Rectangle()
@@ -4295,81 +5403,385 @@ private enum ForesightRange: String, CaseIterable, Identifiable, Equatable {
 }
 
 private enum ForesightIndicator: String, Identifiable, Hashable {
+    case sma10 = "SMA 10"
     case sma20 = "SMA 20"
     case sma50 = "SMA 50"
+    case sma100 = "SMA 100"
+    case sma200 = "SMA 200"
+    case ema9 = "EMA 9"
+    case ema12 = "EMA 12"
     case ema20 = "EMA 20"
+    case ema26 = "EMA 26"
     case ema50 = "EMA 50"
+    case ema100 = "EMA 100"
+    case ema200 = "EMA 200"
+    case wma20 = "WMA 20"
+    case hma21 = "HMA 21"
     case vwap = "VWAP"
-    case bollingerBands = "Bollinger Bands"
-    case donchianChannel = "Donchian"
-    case keltnerChannel = "Keltner"
+    case previousClose = "Previous Close"
+    case bollingerBands = "Bollinger 20"
+    case bollingerBands50 = "Bollinger 50"
+    case donchianChannel = "Donchian 20"
+    case donchian55 = "Donchian 55"
+    case keltnerChannel = "Keltner 20"
+    case atrBands = "ATR Bands"
+    case regressionChannel = "Regression Channel"
+    case trendDrift = "Trend Drift"
+    case meanReversion = "Mean Reversion"
+    case vwapCarry = "VWAP Carry"
+    case volatilityCone = "Volatility Cone"
     case bollingerMid = "Bollinger Mid"
     case bollingerUpper = "Bollinger Upper"
     case bollingerLower = "Bollinger Lower"
+    case bollinger50Mid = "Bollinger 50 Mid"
+    case bollinger50Upper = "Bollinger 50 Upper"
+    case bollinger50Lower = "Bollinger 50 Lower"
     case donchianUpper = "Donchian Upper"
     case donchianLower = "Donchian Lower"
+    case donchian55Upper = "Donchian 55 Upper"
+    case donchian55Lower = "Donchian 55 Lower"
     case keltnerMid = "Keltner Mid"
     case keltnerUpper = "Keltner Upper"
     case keltnerLower = "Keltner Lower"
+    case atrUpper = "ATR Upper"
+    case atrLower = "ATR Lower"
+    case regressionMid = "Regression Mid"
+    case regressionUpper = "Regression Upper"
+    case regressionLower = "Regression Lower"
+    case volatilityConeMid = "Volatility Cone Mid"
+    case volatilityConeUpper = "Volatility Cone Upper"
+    case volatilityConeLower = "Volatility Cone Lower"
 
     var id: String { rawValue }
 
     static let menuCases: [ForesightIndicator] = [
+        .sma10,
         .sma20,
         .sma50,
+        .sma100,
+        .sma200,
+        .ema9,
+        .ema12,
         .ema20,
+        .ema26,
         .ema50,
+        .ema100,
+        .ema200,
+        .wma20,
+        .hma21,
         .vwap,
+        .previousClose,
         .bollingerBands,
+        .bollingerBands50,
         .donchianChannel,
-        .keltnerChannel
+        .donchian55,
+        .keltnerChannel,
+        .atrBands,
+        .regressionChannel,
+        .trendDrift,
+        .meanReversion,
+        .vwapCarry,
+        .volatilityCone
     ]
 
     var menuTitle: String {
         switch self {
-        case .sma20, .sma50, .ema20, .ema50, .vwap, .bollingerBands, .donchianChannel, .keltnerChannel:
+        case .sma10, .sma20, .sma50, .sma100, .sma200,
+             .ema9, .ema12, .ema20, .ema26, .ema50, .ema100, .ema200,
+             .wma20, .hma21, .vwap, .previousClose, .bollingerBands, .bollingerBands50,
+             .donchianChannel, .donchian55, .keltnerChannel, .atrBands, .regressionChannel,
+             .trendDrift, .meanReversion, .vwapCarry, .volatilityCone:
             return rawValue
-        case .bollingerMid, .bollingerUpper, .bollingerLower, .donchianUpper, .donchianLower, .keltnerMid, .keltnerUpper, .keltnerLower:
+        case .bollingerMid, .bollingerUpper, .bollingerLower,
+             .bollinger50Mid, .bollinger50Upper, .bollinger50Lower,
+             .donchianUpper, .donchianLower, .donchian55Upper, .donchian55Lower,
+             .keltnerMid, .keltnerUpper, .keltnerLower,
+             .atrUpper, .atrLower, .regressionMid, .regressionUpper, .regressionLower,
+             .volatilityConeMid, .volatilityConeUpper, .volatilityConeLower:
             return "Hidden"
+        }
+    }
+
+    var tooltipTitle: String {
+        switch self {
+        case .bollingerMid:
+            return "Bollinger Mid"
+        case .bollingerUpper:
+            return "Bollinger Upper"
+        case .bollingerLower:
+            return "Bollinger Lower"
+        case .bollinger50Mid:
+            return "Bollinger 50 Mid"
+        case .bollinger50Upper:
+            return "Bollinger 50 Upper"
+        case .bollinger50Lower:
+            return "Bollinger 50 Lower"
+        case .donchianUpper:
+            return "Donchian Upper"
+        case .donchianLower:
+            return "Donchian Lower"
+        case .donchian55Upper:
+            return "Donchian 55 Upper"
+        case .donchian55Lower:
+            return "Donchian 55 Lower"
+        case .keltnerMid:
+            return "Keltner Mid"
+        case .keltnerUpper:
+            return "Keltner Upper"
+        case .keltnerLower:
+            return "Keltner Lower"
+        case .atrUpper:
+            return "ATR Upper"
+        case .atrLower:
+            return "ATR Lower"
+        case .regressionMid:
+            return "Regression Mid"
+        case .regressionUpper:
+            return "Regression Upper"
+        case .regressionLower:
+            return "Regression Lower"
+        case .volatilityConeMid:
+            return "Volatility Cone Mid"
+        case .volatilityConeUpper:
+            return "Volatility Cone Upper"
+        case .volatilityConeLower:
+            return "Volatility Cone Lower"
+        default:
+            return rawValue
+        }
+    }
+
+    var insight: InspectorInsight {
+        switch self {
+        case .sma10, .sma20, .sma50, .sma100, .sma200:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "Simple moving average of the last \(periodLabel) closes. Smooths price and highlights trend direction.",
+                expectedRange: "Best for tracking trend bias, support or resistance drift, and crossovers.",
+                action: "Use shorter SMAs for pace, longer SMAs for structure. Price above it usually means trend is holding."
+            )
+        case .ema9, .ema12, .ema20, .ema26, .ema50, .ema100, .ema200:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "Exponential moving average that reacts faster to recent price changes than a simple average.",
+                expectedRange: "Useful for momentum turns, pullback tracking, and faster crossover reads.",
+                action: "Use fast EMAs to catch turns early and slower EMAs to confirm the broader move."
+            )
+        case .wma20:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "Weighted moving average that gives more importance to the most recent samples.",
+                expectedRange: "Sits between SMA and EMA in responsiveness.",
+                action: "Watch it when you want a cleaner trend line without the extra snap of a fast EMA."
+            )
+        case .hma21:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "Hull moving average designed to reduce lag while keeping the line smooth.",
+                expectedRange: "Often turns earlier than standard moving averages in strong swings.",
+                action: "Use it for cleaner trend shifts, but confirm with price because it can still whip in chop."
+            )
+        case .vwap:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "Volume-weighted average price for the current session or visible run.",
+                expectedRange: "Common benchmark for fair value and intraday positioning.",
+                action: "Price above VWAP usually means buyers control the session; below it suggests weaker tone."
+            )
+        case .previousClose:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "Flat reference line marking the previous closing price.",
+                expectedRange: "Acts as a simple context anchor for gaps, reclaims, and rejection levels.",
+                action: "Treat it like a headline level. Reclaiming it can change the session tone fast."
+            )
+        case .bollingerBands:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "20-period moving average with volatility bands two standard deviations above and below.",
+                expectedRange: "Band width expands in volatility and tightens during compression.",
+                action: "Use squeezes for breakout prep and band tags for extension context, not automatic reversals."
+            )
+        case .bollingerBands50:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "Slower Bollinger structure with a 50-period base, better for broader moves.",
+                expectedRange: "Less reactive than the 20-period version and better for higher-level structure.",
+                action: "Use it when the fast bands are too noisy and you want a calmer envelope."
+            )
+        case .donchianChannel:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "Highest high and lowest low over the last 20 samples.",
+                expectedRange: "Shows breakout boundaries and short-term range containment.",
+                action: "A break above the upper line or below the lower line often marks a regime change."
+            )
+        case .donchian55:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "Broader Donchian breakout envelope based on the last 55 samples.",
+                expectedRange: "Slower channel used for larger structure and trend confirmation.",
+                action: "Use it when you care more about durable breaks than quick noise."
+            )
+        case .keltnerChannel:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "EMA centerline with ATR-based outer bands that adapt to movement size.",
+                expectedRange: "Cleaner than Bollinger in trend environments because it follows range expansion directly.",
+                action: "Watch for price walking the outer band when trend strength is real."
+            )
+        case .atrBands:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "Range bands around price using average true movement rather than standard deviation.",
+                expectedRange: "Helpful for framing typical travel distance and expansion risk.",
+                action: "Use it to judge whether the move is still normal or already stretched."
+            )
+        case .regressionChannel:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "Trend line fitted through recent price with upper and lower deviation rails.",
+                expectedRange: "Shows slope, fair trend path, and distance from that path.",
+                action: "Price holding the channel supports continuation. Sharp deviations hint at mean reversion risk."
+            )
+        case .trendDrift:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "Projects the recent slope forward into the foresight lane using the current trend pace.",
+                expectedRange: "Simple continuation path, not a prediction engine.",
+                action: "Use it as a baseline future path to compare other future signals against."
+            )
+        case .meanReversion:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "Projects price bending back toward a recent average instead of extending the current move forever.",
+                expectedRange: "Most useful after stretched moves or obvious dislocations.",
+                action: "Use it to visualize where a pullback path could settle if momentum cools."
+            )
+        case .vwapCarry:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "Carries the latest VWAP level flat into the foresight lane as a future value anchor.",
+                expectedRange: "Acts like a fair-value reference for upcoming signals.",
+                action: "Use it to judge whether future projections are drifting rich or cheap versus current flow."
+            )
+        case .volatilityCone:
+            return InspectorInsight(
+                title: rawValue,
+                meaning: "Projects a central path with widening volatility bounds into the foresight lane.",
+                expectedRange: "The cone broadens over time to reflect increasing uncertainty.",
+                action: "Use the center as a bias path and the outer edges as expected movement limits."
+            )
+        case .bollingerMid, .bollingerUpper, .bollingerLower,
+             .bollinger50Mid, .bollinger50Upper, .bollinger50Lower,
+             .donchianUpper, .donchianLower, .donchian55Upper, .donchian55Lower,
+             .keltnerMid, .keltnerUpper, .keltnerLower,
+             .atrUpper, .atrLower, .regressionMid, .regressionUpper, .regressionLower,
+             .volatilityConeMid, .volatilityConeUpper, .volatilityConeLower:
+            return InspectorInsight(
+                title: tooltipTitle,
+                meaning: "Internal component line used by a parent indicator.",
+                expectedRange: "This is usually managed together with its full indicator family.",
+                action: "Use the parent indicator in the selector for the complete overlay set."
+            )
+        }
+    }
+
+    private var periodLabel: String {
+        switch self {
+        case .sma10:
+            return "10"
+        case .sma20:
+            return "20"
+        case .sma50:
+            return "50"
+        case .sma100:
+            return "100"
+        case .sma200:
+            return "200"
+        default:
+            return ""
         }
     }
 
     var color: Color {
         switch self {
+        case .sma10:
+            return Color(red: 0.74, green: 0.90, blue: 0.68).opacity(0.86)
         case .sma20:
             return Color(red: 0.71, green: 0.88, blue: 0.62).opacity(0.84)
         case .sma50:
             return Color(red: 0.54, green: 0.82, blue: 0.90).opacity(0.82)
-        case .ema20:
+        case .sma100, .sma200:
+            return Color(red: 0.58, green: 0.74, blue: 0.92).opacity(0.72)
+        case .ema9, .ema12, .ema20:
             return Color(red: 0.95, green: 0.84, blue: 0.53).opacity(0.88)
-        case .ema50:
+        case .ema26, .ema50:
             return Color(red: 0.89, green: 0.63, blue: 0.57).opacity(0.82)
+        case .ema100, .ema200:
+            return Color(red: 0.94, green: 0.70, blue: 0.70).opacity(0.68)
+        case .wma20:
+            return Color(red: 0.64, green: 0.86, blue: 0.92).opacity(0.84)
+        case .hma21:
+            return Color(red: 0.82, green: 0.78, blue: 0.96).opacity(0.84)
         case .vwap:
             return Color(red: 0.90, green: 0.72, blue: 0.55).opacity(0.82)
-        case .bollingerBands:
+        case .previousClose:
+            return Color(red: 0.86, green: 0.86, blue: 0.88).opacity(0.62)
+        case .bollingerBands, .bollingerBands50:
             return Color(red: 0.80, green: 0.70, blue: 0.88).opacity(0.75)
-        case .donchianChannel:
+        case .donchianChannel, .donchian55:
             return Color(red: 0.63, green: 0.86, blue: 0.82).opacity(0.78)
         case .keltnerChannel:
             return Color(red: 0.93, green: 0.76, blue: 0.58).opacity(0.78)
-        case .bollingerMid:
+        case .atrBands:
+            return Color(red: 0.94, green: 0.64, blue: 0.58).opacity(0.72)
+        case .regressionChannel:
+            return Color(red: 0.70, green: 0.80, blue: 0.96).opacity(0.74)
+        case .trendDrift:
+            return Color(red: 0.95, green: 0.78, blue: 0.53).opacity(0.88)
+        case .meanReversion:
+            return Color(red: 0.72, green: 0.88, blue: 0.76).opacity(0.86)
+        case .vwapCarry:
+            return Color(red: 0.84, green: 0.84, blue: 0.96).opacity(0.84)
+        case .volatilityCone:
+            return Color(red: 0.88, green: 0.66, blue: 0.80).opacity(0.80)
+        case .bollingerMid, .bollinger50Mid:
             return Color(red: 0.88, green: 0.80, blue: 0.94).opacity(0.62)
-        case .bollingerUpper, .bollingerLower:
+        case .bollingerUpper, .bollingerLower, .bollinger50Upper, .bollinger50Lower:
             return Color(red: 0.72, green: 0.64, blue: 0.82).opacity(0.56)
-        case .donchianUpper, .donchianLower:
+        case .donchianUpper, .donchianLower, .donchian55Upper, .donchian55Lower:
             return Color(red: 0.63, green: 0.86, blue: 0.82).opacity(0.62)
         case .keltnerMid:
             return Color(red: 0.97, green: 0.84, blue: 0.62).opacity(0.66)
         case .keltnerUpper, .keltnerLower:
             return Color(red: 0.93, green: 0.76, blue: 0.58).opacity(0.58)
+        case .atrUpper, .atrLower:
+            return Color(red: 0.94, green: 0.64, blue: 0.58).opacity(0.56)
+        case .regressionMid:
+            return Color(red: 0.76, green: 0.84, blue: 0.98).opacity(0.70)
+        case .regressionUpper, .regressionLower:
+            return Color(red: 0.70, green: 0.80, blue: 0.96).opacity(0.50)
+        case .volatilityConeMid:
+            return Color(red: 0.93, green: 0.74, blue: 0.84).opacity(0.76)
+        case .volatilityConeUpper, .volatilityConeLower:
+            return Color(red: 0.88, green: 0.66, blue: 0.80).opacity(0.54)
         }
     }
 
     var lineWidth: CGFloat {
         switch self {
-        case .sma20, .sma50, .ema20, .ema50, .vwap:
+        case .sma10, .sma20, .sma50, .sma100, .sma200,
+             .ema9, .ema12, .ema20, .ema26, .ema50, .ema100, .ema200,
+             .wma20, .hma21, .vwap, .previousClose,
+             .trendDrift, .meanReversion, .vwapCarry:
             return 1.35
-        case .bollingerBands, .bollingerMid, .bollingerUpper, .bollingerLower, .donchianChannel, .donchianUpper, .donchianLower, .keltnerChannel, .keltnerMid, .keltnerUpper, .keltnerLower:
+        case .bollingerBands, .bollingerBands50, .bollingerMid, .bollingerUpper, .bollingerLower,
+             .bollinger50Mid, .bollinger50Upper, .bollinger50Lower,
+             .donchianChannel, .donchian55, .donchianUpper, .donchianLower, .donchian55Upper, .donchian55Lower,
+             .keltnerChannel, .keltnerMid, .keltnerUpper, .keltnerLower,
+             .atrBands, .atrUpper, .atrLower, .regressionChannel, .regressionMid, .regressionUpper, .regressionLower,
+             .volatilityCone, .volatilityConeMid, .volatilityConeUpper, .volatilityConeLower:
             return 1.0
         }
     }
@@ -4377,8 +5789,11 @@ private enum ForesightIndicator: String, Identifiable, Hashable {
 
 private enum ForesightIndicatorGroup: String, CaseIterable, Identifiable {
     case trend
+    case adaptive
     case priceStructure
     case volatility
+    case channels
+    case future
 
     var id: String { rawValue }
 
@@ -4386,21 +5801,33 @@ private enum ForesightIndicatorGroup: String, CaseIterable, Identifiable {
         switch self {
         case .trend:
             return "TREND"
+        case .adaptive:
+            return "ADAPTIVE"
         case .priceStructure:
             return "PRICE"
         case .volatility:
             return "VOLATILITY"
+        case .channels:
+            return "CHANNELS"
+        case .future:
+            return "FUTURE"
         }
     }
 
     var indicators: [ForesightIndicator] {
         switch self {
         case .trend:
-            return [.sma20, .sma50, .ema20, .ema50]
+            return [.sma10, .sma20, .sma50, .sma100, .sma200, .ema9, .ema12, .ema20, .ema26, .ema50, .ema100, .ema200]
+        case .adaptive:
+            return [.wma20, .hma21, .regressionChannel]
         case .priceStructure:
-            return [.vwap, .donchianChannel]
+            return [.vwap, .previousClose]
         case .volatility:
-            return [.bollingerBands, .keltnerChannel]
+            return [.bollingerBands, .bollingerBands50, .keltnerChannel, .atrBands]
+        case .channels:
+            return [.donchianChannel, .donchian55]
+        case .future:
+            return [.trendDrift, .meanReversion, .vwapCarry, .volatilityCone]
         }
     }
 }

@@ -14,7 +14,7 @@ final class FinnhubStockProvider: @unchecked Sendable, MarketDataProvider {
 
     func searchInstruments(query: String) async throws -> [InstrumentMetadata] {
         guard let apiKey, !apiKey.isEmpty else {
-            return fallbackSearch(query: query)
+            throw ProviderError.missingAPIKey(provider: id)
         }
 
         let url = restBaseURL
@@ -25,7 +25,10 @@ final class FinnhubStockProvider: @unchecked Sendable, MarketDataProvider {
             ])
 
         let payload: FinnhubSearchResponse = try await fetch(url: url)
-        return payload.result.prefix(10).compactMap { item in
+        return payload.result
+            .filter { Self.supportsSearchResultType($0.type) }
+            .prefix(10)
+            .compactMap { item in
             let symbol = item.symbol.uppercased()
             guard !symbol.isEmpty else { return nil }
             return InstrumentMetadata(
@@ -150,40 +153,21 @@ final class FinnhubStockProvider: @unchecked Sendable, MarketDataProvider {
             throw ProviderError.emptyResponse(provider: id)
         }
 
-        let points = zip(timestamps, closes).map { timestamp, price in
-            LinePoint(
+        let volumes = payload.volume ?? []
+        let points = zip(timestamps.indices, zip(timestamps, closes)).map { index, pair in
+            let (timestamp, price) = pair
+            return LinePoint(
                 instrumentID: instrument.id,
                 timestamp: timestamp,
                 price: price,
-                volume: nil,
+                volume: index < volumes.count ? volumes[index] : nil,
                 source: id,
                 quality: .backfill,
                 resolutionSeconds: resolution.seconds
             )
         }
 
-        return points
-    }
-
-    private func fallbackSearch(query: String) -> [InstrumentMetadata] {
-        let symbol = query
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .uppercased()
-            .filter { $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" }
-
-        guard !symbol.isEmpty else { return [] }
-
-        return [
-            InstrumentMetadata(
-                id: InstrumentID(type: .equity, symbol: symbol),
-                displaySymbol: symbol,
-                name: symbol,
-                exchange: "Equity",
-                currency: "USD",
-                provider: id,
-                session: "Free key required"
-            )
-        ]
+        return Array(points.prefix(maxPoints))
     }
 
     private func fetch<T: Decodable>(url: URL) async throws -> T {
@@ -201,6 +185,18 @@ final class FinnhubStockProvider: @unchecked Sendable, MarketDataProvider {
             let detail = String(data: data, encoding: .utf8) ?? "HTTP \(http.statusCode)"
             throw ProviderError.badResponse(provider: id, detail: detail)
         }
+    }
+
+    private static func supportsSearchResultType(_ rawType: String?) -> Bool {
+        guard let rawType, !rawType.isEmpty else { return true }
+
+        let normalized = rawType.lowercased()
+        return normalized.contains("stock")
+            || normalized.contains("equity")
+            || normalized.contains("adr")
+            || normalized.contains("reit")
+            || normalized.contains("etf")
+            || normalized.contains("etp")
     }
 }
 
@@ -227,11 +223,13 @@ private struct FinnhubQuote: Decodable {
 private struct FinnhubCandleResponse: Decodable {
     let close: [Double]?
     let timestamp: [Int64]?
+    let volume: [Double]?
     let status: String
 
     enum CodingKeys: String, CodingKey {
         case close = "c"
         case timestamp = "t"
+        case volume = "v"
         case status = "s"
     }
 }

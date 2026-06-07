@@ -16,6 +16,12 @@ protocol MarketDataProvider: Sendable {
     ) async throws -> [LinePoint]
 }
 
+protocol MarketDataRouting: Sendable {
+    func provider(for instrument: InstrumentMetadata) throws -> any MarketDataProvider
+    func searchEquities(query: String) async throws -> [InstrumentMetadata]
+    func resolveEquity(query: String) async throws -> InstrumentMetadata
+}
+
 enum ProviderError: LocalizedError, Sendable {
     case unsupportedInstrument
     case missingAPIKey(provider: String)
@@ -53,7 +59,7 @@ struct MarketDataConfiguration: Sendable {
     }
 }
 
-struct ProviderRouter: Sendable {
+struct ProviderRouter: MarketDataRouting {
     let binance: BinanceProvider
     private let configurationOverride: MarketDataConfiguration?
 
@@ -83,71 +89,48 @@ struct ProviderRouter: Sendable {
         )
     }
 
-    func inferInstrument(from rawQuery: String) -> InstrumentMetadata {
-        let cleaned = rawQuery
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .uppercased()
-            .replacingOccurrences(of: "/", with: "")
-            .replacingOccurrences(of: "-", with: "")
-
-        if cleaned.hasSuffix("USDT") || cleaned.hasSuffix("USDC") || cleaned.hasSuffix("BTC") || cleaned.hasSuffix("ETH") || Self.commonCryptoBases.contains(cleaned) {
-            let symbol = Self.commonCryptoBases.contains(cleaned) ? "\(cleaned)USDT" : cleaned
-            return InstrumentMetadata(
-                id: InstrumentID(type: .crypto, symbol: symbol),
-                displaySymbol: prettyCryptoSymbol(symbol),
-                name: symbol,
-                exchange: "Binance",
-                currency: symbol.hasSuffix("USDT") ? "USDT" : "",
-                provider: binance.id,
-                session: "24/7"
-            )
-        }
-
-        return InstrumentMetadata(
-            id: InstrumentID(type: .equity, symbol: cleaned),
-            displaySymbol: cleaned,
-            name: cleaned,
-            exchange: "Global",
-            currency: "USD",
-            provider: stockProvider().id,
-            session: "Market hours"
-        )
-    }
-
     func search(query: String) async -> [InstrumentMetadata] {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return [defaultInstrument()] }
 
         async let cryptoResults = try? binance.searchInstruments(query: normalized)
-        async let stockResults = try? stockProvider().searchInstruments(query: normalized)
+        async let stockResults = try? searchEquities(query: normalized)
 
         let combined = (await cryptoResults ?? []) + (await stockResults ?? [])
-        if combined.isEmpty {
-            return [inferInstrument(from: normalized)]
-        }
         return Array(combined.prefix(12))
+    }
+
+    func searchEquities(query: String) async throws -> [InstrumentMetadata] {
+        try await stockProvider().searchInstruments(query: query)
+    }
+
+    func resolveEquity(query: String) async throws -> InstrumentMetadata {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let results = try await searchEquities(query: query)
+
+        if let exact = results.first(where: { $0.id.symbol == normalized }) {
+            return exact
+        }
+
+        guard let first = results.first else {
+            throw ProviderError.emptyResponse(provider: stockProvider().id)
+        }
+
+        return first
     }
 
     func topMovers(limit: Int = 80) async throws -> [MarketMover] {
         try await binance.topMovers(limit: limit)
     }
 
-    private func stockProvider() -> FinnhubStockProvider {
+    private func stockProvider() -> any MarketDataProvider {
         let configuration = configurationOverride ?? .current
-        return FinnhubStockProvider(apiKey: configuration.finnhubAPIKey)
+        let finnhubKey = configuration.finnhubAPIKey?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finnhub = finnhubKey?.isEmpty == false
+            ? FinnhubStockProvider(apiKey: finnhubKey)
+            : nil
+
+        return CompositeStockProvider(primary: finnhub)
     }
 
-    private func prettyCryptoSymbol(_ symbol: String) -> String {
-        for quote in ["USDT", "USDC", "BTC", "ETH"] where symbol.hasSuffix(quote) {
-            let base = String(symbol.dropLast(quote.count))
-            return "\(base) / \(quote)"
-        }
-        return symbol
-    }
-
-    private static let commonCryptoBases: Set<String> = [
-        "BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "AVAX", "LINK", "LTC",
-        "TRX", "DOT", "MATIC", "BCH", "UNI", "ATOM", "ETC", "XLM", "FIL", "APT",
-        "ARB", "OP", "NEAR", "SUI", "PEPE", "SHIB"
-    ]
 }
