@@ -764,6 +764,22 @@ struct AeviumSettingsView: View {
     @State private var statusMessage = "Stock data uses Finnhub. Crypto data uses Binance public endpoints and needs no key."
     @State private var statusIsError = false
 
+    private var installedVersionLabel: String {
+        let shortVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let buildVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+
+        switch (shortVersion, buildVersion) {
+        case let (shortVersion?, buildVersion?) where !shortVersion.isEmpty && !buildVersion.isEmpty:
+            return "Version \(shortVersion) (\(buildVersion))"
+        case let (shortVersion?, _) where !shortVersion.isEmpty:
+            return "Version \(shortVersion)"
+        case let (_, buildVersion?) where !buildVersion.isEmpty:
+            return "Build \(buildVersion)"
+        default:
+            return "Version unavailable"
+        }
+    }
+
     private var hasSavedKey: Bool {
         AeviumAPIKeyStore.hasFinnhubAPIKey()
     }
@@ -924,6 +940,10 @@ struct AeviumSettingsView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     )
             )
+
+            Text(installedVersionLabel)
+                .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.42))
         }
         .padding(22)
         .frame(width: 520)
