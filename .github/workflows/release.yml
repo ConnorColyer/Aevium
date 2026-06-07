@@ -21,10 +21,8 @@ jobs:
       url: ${{ steps.deploy-pages.outputs.page_url }}
     env:
       APP_BUNDLE: Aevium.app
-      DERIVED_DATA_PATH: ${{ runner.temp }}/DerivedData
       DIST_PATH: ${{ github.workspace }}/dist
       PROJECT_PATH: Aevium.xcodeproj
-      RELEASE_APP_PATH: ${{ runner.temp }}/Aevium.app
       SCHEME: Aevium
       SPARKLE_VERSION: 2.9.2
 
@@ -55,6 +53,9 @@ jobs:
 
       - name: Build unsigned release app
         run: |
+          DERIVED_DATA_PATH="$RUNNER_TEMP/DerivedData"
+          RELEASE_APP_PATH="$RUNNER_TEMP/Aevium.app"
+
           xcodebuild build \
             -derivedDataPath "$DERIVED_DATA_PATH" \
             -project "$PROJECT_PATH" \
@@ -63,13 +64,15 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
 
+          rm -rf "$RELEASE_APP_PATH"
           cp -R "$DERIVED_DATA_PATH/Build/Products/Release/$APP_BUNDLE" "$RELEASE_APP_PATH"
+          echo "AEVIUM_RELEASE_APP_PATH=$RELEASE_APP_PATH" >> "$GITHUB_ENV"
 
       - name: Package release artifacts
         run: |
           mkdir -p "$DIST_PATH"
-          ./scripts/create_dmg.sh "$RELEASE_APP_PATH" "$DIST_PATH/Aevium.dmg"
-          ./scripts/create_zip.sh "$RELEASE_APP_PATH" "$DIST_PATH/Aevium.zip"
+          ./scripts/create_dmg.sh "$AEVIUM_RELEASE_APP_PATH" "$DIST_PATH/Aevium.dmg"
+          ./scripts/create_zip.sh "$AEVIUM_RELEASE_APP_PATH" "$DIST_PATH/Aevium.zip"
 
       - name: Generate release notes
         run: ./scripts/generate_release_notes.sh "${GITHUB_REF_NAME#v}" "$DIST_PATH/release-notes.md"
