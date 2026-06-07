@@ -20,6 +20,7 @@ final class AeviumMarketViewModel: ObservableObject {
     @Published var searchQuery = ""
     @Published var searchResults: [InstrumentMetadata] = []
     @Published var isSearching = false
+    @Published var searchErrorMessage: String?
     @Published var errorMessage: String?
 
     private var engine: MarketDataEngine?
@@ -75,12 +76,17 @@ final class AeviumMarketViewModel: ObservableObject {
         }
     }
 
-    func attach(engine: MarketDataEngine) {
+    func attach(engine: MarketDataEngine, preferredInstrument: InstrumentMetadata? = nil) {
         guard self.engine == nil else { return }
         self.engine = engine
 
         Task {
-            let instrument = await engine.defaultInstrument()
+            let instrument: InstrumentMetadata
+            if let preferredInstrument {
+                instrument = preferredInstrument
+            } else {
+                instrument = await engine.defaultInstrument()
+            }
             await MainActor.run {
                 self.selectInstrument(instrument)
             }
@@ -109,13 +115,13 @@ final class AeviumMarketViewModel: ObservableObject {
         guard query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 else {
             searchResults = []
             isSearching = false
-            errorMessage = nil
+            searchErrorMessage = nil
             return
         }
 
         searchResults = []
         isSearching = true
-        errorMessage = nil
+        searchErrorMessage = nil
 
         searchTask = Task { [weak self] in
             guard let self else { return }
@@ -132,11 +138,12 @@ final class AeviumMarketViewModel: ObservableObject {
                 await MainActor.run {
                     self.searchResults = results
                     self.isSearching = false
+                    self.searchErrorMessage = nil
                 }
             } catch {
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
-                    self.errorMessage = error.localizedDescription
+                    self.searchErrorMessage = error.localizedDescription
                     self.isSearching = false
                 }
             }
@@ -146,6 +153,7 @@ final class AeviumMarketViewModel: ObservableObject {
     func commitSearch() {
         let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let engine else { return }
+        searchErrorMessage = nil
 
         if let first = searchResults.first {
             selectInstrument(first)
@@ -156,11 +164,12 @@ final class AeviumMarketViewModel: ObservableObject {
             do {
                 let resolved = try await engine.resolveInstrument(query: trimmed)
                 await MainActor.run {
+                    self.searchErrorMessage = nil
                     self.selectInstrument(resolved)
                 }
             } catch {
                 await MainActor.run {
-                    self.errorMessage = error.localizedDescription
+                    self.searchErrorMessage = error.localizedDescription
                 }
             }
         }
@@ -172,6 +181,7 @@ final class AeviumMarketViewModel: ObservableObject {
         searchQuery = instrument.compactTitle
         searchResults = []
         isSearching = false
+        searchErrorMessage = nil
         syncState = .idle(for: instrument.id)
         errorMessage = nil
         resetSeries()

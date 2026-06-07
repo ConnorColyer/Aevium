@@ -41,6 +41,74 @@ final class WatchlistStoreTests: XCTestCase {
         XCTAssertTrue(store.contains(Self.btc))
     }
 
+    @MainActor
+    func testRecentInstrumentsPersistAndRefreshOrdering() throws {
+        let defaults = try makeDefaults()
+        let store = RecentInstrumentStore(defaults: defaults, storageKey: "recents", maxItems: 3)
+
+        store.remember(Self.btc)
+        store.remember(Self.eth)
+        store.remember(Self.btcRenamed)
+        store.remember(Self.sol)
+
+        XCTAssertEqual(store.instruments.map(\.id.symbol), ["SOLUSDT", "BTCUSDT", "ETHUSDT"])
+        XCTAssertEqual(store.instruments[1].name, "Bitcoin Reloaded")
+
+        let reloaded = RecentInstrumentStore(defaults: defaults, storageKey: "recents", maxItems: 3)
+        XCTAssertEqual(reloaded.instruments.map(\.id.symbol), ["SOLUSDT", "BTCUSDT", "ETHUSDT"])
+        XCTAssertEqual(reloaded.instruments[1].name, "Bitcoin Reloaded")
+    }
+
+    func testMergedQuickAccessDedupesAndExcludesCurrentInstrument() {
+        let merged = InstrumentCollection.mergedUnique(
+            primary: [Self.btc, Self.eth, Self.sol],
+            secondary: [Self.eth, Self.bnb, Self.btcRenamed],
+            excluding: Self.eth.id,
+            limit: 4
+        )
+
+        XCTAssertEqual(merged.map(\.id.symbol), ["BTCUSDT", "SOLUSDT", "BNBUSDT"])
+        XCTAssertEqual(merged.first?.name, "Bitcoin")
+    }
+
+    @MainActor
+    func testWorkspacePreferencesPersistAndRestoreDefaults() throws {
+        let defaults = try makeDefaults()
+        let store = WorkspacePreferencesStore(defaults: defaults, storageKey: "workspace")
+
+        XCTAssertEqual(store.preferences, WorkspacePreferences())
+
+        store.update { preferences in
+            preferences.selectedTabRawValue = "market"
+            preferences.selectedInstrument = Self.eth
+            preferences.selectedRangeRawValue = "1M"
+            preferences.selectedForesightRawValue = "1H"
+            preferences.selectedIndicatorRawValues = ["EMA 20", "VWAP"]
+            preferences.isInspectorOpen = false
+            preferences.selectedInspectorPanelRawValue = "Risk"
+            preferences.chartSmoothness = 0.4
+        }
+
+        let reloaded = WorkspacePreferencesStore(defaults: defaults, storageKey: "workspace")
+        XCTAssertEqual(reloaded.preferences.selectedTabRawValue, "market")
+        XCTAssertEqual(reloaded.preferences.selectedInstrument?.id.symbol, "ETHUSDT")
+        XCTAssertEqual(reloaded.preferences.selectedRangeRawValue, "1M")
+        XCTAssertEqual(reloaded.preferences.selectedForesightRawValue, "1H")
+        XCTAssertEqual(reloaded.preferences.selectedIndicatorRawValues, ["EMA 20", "VWAP"])
+        XCTAssertEqual(reloaded.preferences.isInspectorOpen, false)
+        XCTAssertEqual(reloaded.preferences.selectedInspectorPanelRawValue, "Risk")
+        XCTAssertEqual(reloaded.preferences.chartSmoothness, 0.4)
+    }
+
+    @MainActor
+    func testWorkspacePreferencesFallbackToDefaultOnInvalidPayload() throws {
+        let defaults = try makeDefaults()
+        defaults.set(Data("not-json".utf8), forKey: "workspace")
+
+        let reloaded = WorkspacePreferencesStore(defaults: defaults, storageKey: "workspace")
+        XCTAssertEqual(reloaded.preferences, WorkspacePreferences())
+    }
+
     private func makeDefaults() throws -> UserDefaults {
         let suiteName = "AeviumWatchlistTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

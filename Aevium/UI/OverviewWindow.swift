@@ -24,6 +24,13 @@ struct MarketOverviewTab: View {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     PulseHeroBand(model: model)
 
+                    PulseQuickAccessStrip(
+                        watchlist: environment.watchlist,
+                        recents: environment.recentInstruments,
+                        movers: model.movers,
+                        onSelect: environment.openInstrument
+                    )
+
                     LazyVGrid(columns: summaryColumns, alignment: .leading, spacing: 10) {
                         PulseMetricCard(
                             title: "Active",
@@ -98,12 +105,6 @@ struct MarketOverviewTab: View {
                             onSelect: environment.openInstrument
                         )
                     }
-
-                    PulseWatchlistStrip(
-                        watchlist: environment.watchlist,
-                        movers: model.movers,
-                        onSelect: environment.openInstrument
-                    )
                 }
                 .padding(.horizontal, 18)
                 .padding(.top, 16)
@@ -718,8 +719,9 @@ private struct PulseMoverRow: View {
     }
 }
 
-private struct PulseWatchlistStrip: View {
+private struct PulseQuickAccessStrip: View {
     @ObservedObject var watchlist: InstrumentWatchlistStore
+    @ObservedObject var recents: RecentInstrumentStore
     let movers: [MarketMover]
     let onSelect: (InstrumentMetadata) -> Void
 
@@ -727,17 +729,46 @@ private struct PulseWatchlistStrip: View {
         GridItem(.adaptive(minimum: 156), spacing: 8)
     ]
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            PulseSectionHeader(title: "Watchlist", trailing: "\(watchlist.instruments.count)")
+    private var recentItems: [InstrumentMetadata] {
+        InstrumentCollection.mergedUnique(
+            primary: recents.instruments,
+            secondary: watchlist.instruments,
+            excluding: nil,
+            limit: 6
+        )
+    }
 
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                ForEach(watchlist.instruments) { instrument in
-                    WatchlistPulseTile(
-                        instrument: instrument,
-                        mover: movers.first { $0.instrument.id == instrument.id },
-                        onSelect: onSelect
-                    )
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !watchlist.instruments.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    PulseSectionHeader(title: "Watchlist", trailing: "\(watchlist.instruments.count)")
+
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                        ForEach(watchlist.instruments) { instrument in
+                            WatchlistPulseTile(
+                                instrument: instrument,
+                                mover: movers.first { $0.instrument.id == instrument.id },
+                                onSelect: onSelect
+                            )
+                        }
+                    }
+                }
+            }
+
+            if !recentItems.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    PulseSectionHeader(title: "Recent", trailing: "\(recentItems.count)")
+
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                        ForEach(recentItems) { instrument in
+                            WatchlistPulseTile(
+                                instrument: instrument,
+                                mover: movers.first { $0.instrument.id == instrument.id },
+                                onSelect: onSelect
+                            )
+                        }
+                    }
                 }
             }
         }

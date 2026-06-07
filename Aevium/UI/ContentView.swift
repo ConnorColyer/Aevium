@@ -55,7 +55,7 @@ private func liquidGlassControlSurface<S: Shape>(
     )
 }
 
-private enum WorkspaceTab {
+private enum WorkspaceTab: String {
     case market
     case overview
 }
@@ -210,11 +210,15 @@ struct ContentView: View {
     @State private var selectedIndicators: Set<ForesightIndicator> = []
     @State private var chartSmoothness: Double = 0
     @State private var selectedTab: WorkspaceTab = .overview
+    @State private var isInspectorOpen = true
+    @State private var selectedInspectorPanel: InspectorPanel = .summary
     @State private var isOldStyleFullscreen = false
     @State private var bootMinimumElapsed = false
     @State private var bootFallbackElapsed = false
     @State private var bootSplashVisible = true
     @State private var bootTask: Task<Void, Never>?
+    @State private var didRestoreWorkspace = false
+    @State private var searchFocusRequestID: UUID?
 
     private let bootMinimumDuration: UInt64 = 650_000_000
     private let bootFallbackDuration: UInt64 = 2_400_000_000
@@ -270,11 +274,15 @@ struct ContentView: View {
                     points: renderedPoints,
                     indicatorPoints: indicatorPoints,
                     watchlist: environment.watchlist,
+                    recentInstruments: environment.recentInstruments,
                     selectedTab: $selectedTab,
                     selectedRange: $selectedRange,
                     selectedForesight: $selectedForesight,
                     selectedIndicators: $selectedIndicators,
                     chartSmoothness: $chartSmoothness,
+                    isInspectorOpen: $isInspectorOpen,
+                    selectedInspectorPanel: $selectedInspectorPanel,
+                    searchFocusRequestID: $searchFocusRequestID,
                     displayedRange: displayedRange,
                     instrumentType: market.selectedInstrument.id.type,
                     instrumentSymbol: market.selectedInstrument.compactTitle,
@@ -295,27 +303,137 @@ struct ContentView: View {
             .background(WindowChromeConfigurator(isOldStyleFullscreen: $isOldStyleFullscreen))
         }
         .onAppear {
-            market.attach(engine: environment.marketDataEngine)
+            let preferredInstrument = restoreWorkspaceIfNeeded()
+            market.attach(engine: environment.marketDataEngine, preferredInstrument: preferredInstrument)
             market.setRange(selectedRange.marketTimeRange)
             beginBootSequence()
         }
         .onChange(of: selectedRange) { _, newValue in
             market.setRange(newValue.marketTimeRange)
+            persistWorkspacePreferences()
+        }
+        .onChange(of: selectedForesight) { _, _ in
+            persistWorkspacePreferences()
+        }
+        .onChange(of: selectedIndicators) { _, _ in
+            persistWorkspacePreferences()
+        }
+        .onChange(of: chartSmoothness) { _, _ in
+            persistWorkspacePreferences()
+        }
+        .onChange(of: selectedTab) { _, _ in
+            persistWorkspacePreferences()
+        }
+        .onChange(of: isInspectorOpen) { _, _ in
+            persistWorkspacePreferences()
+        }
+        .onChange(of: selectedInspectorPanel) { _, _ in
+            persistWorkspacePreferences()
+        }
+        .onChange(of: market.selectedInstrument) { _, newValue in
+            environment.recentInstruments.remember(newValue)
+            persistWorkspacePreferences()
         }
         .onChange(of: market.startupState) { _, _ in
             refreshBootSplashVisibility()
         }
-        .onReceive(environment.$instrumentSelectionRequest) { request in
-            guard let request else { return }
-            withAnimation(Motion.spring) {
-                selectedTab = .market
-            }
-            market.selectInstrument(request.instrument)
-        }
+        .onReceive(environment.$instrumentSelectionRequest, perform: handleInstrumentSelectionRequest)
+        .onReceive(environment.$commandRequest, perform: handleCommandRequest)
         .onDisappear {
             bootTask?.cancel()
             bootTask = nil
         }
+    }
+
+    private func restoreWorkspaceIfNeeded() -> InstrumentMetadata? {
+        guard !didRestoreWorkspace else { return environment.workspacePreferences.preferences.selectedInstrument }
+        didRestoreWorkspace = true
+
+        let preferences = environment.workspacePreferences.preferences
+        if let rawValue = preferences.selectedTabRawValue, let restoredTab = WorkspaceTab(rawValue: rawValue) {
+            selectedTab = restoredTab
+        }
+        if let rawValue = preferences.selectedRangeRawValue, let restoredRange = ChartRange(rawValue: rawValue) {
+            selectedRange = restoredRange
+        }
+        if let rawValue = preferences.selectedForesightRawValue, let restoredForesight = ForesightRange(rawValue: rawValue) {
+            selectedForesight = restoredForesight
+        }
+        if let isInspectorOpen = preferences.isInspectorOpen {
+            self.isInspectorOpen = isInspectorOpen
+        }
+        if let rawValue = preferences.selectedInspectorPanelRawValue, let restoredPanel = InspectorPanel(rawValue: rawValue) {
+            selectedInspectorPanel = restoredPanel
+        }
+
+        let validIndicators = Set(
+            preferences.selectedIndicatorRawValues.compactMap(ForesightIndicator.init(rawValue:))
+        )
+        selectedIndicators = validIndicators
+        chartSmoothness = min(max(preferences.chartSmoothness ?? 0, 0), 1)
+
+        return preferences.selectedInstrument
+    }
+
+    private func persistWorkspacePreferences() {
+        guard didRestoreWorkspace else { return }
+
+        environment.workspacePreferences.update { preferences in
+            preferences.selectedTabRawValue = selectedTab.rawValue
+            preferences.selectedInstrument = market.selectedInstrument
+            preferences.selectedRangeRawValue = selectedRange.rawValue
+            preferences.selectedForesightRawValue = selectedForesight.rawValue
+            preferences.selectedIndicatorRawValues = selectedIndicators.map(\.rawValue).sorted()
+            preferences.isInspectorOpen = isInspectorOpen
+            preferences.selectedInspectorPanelRawValue = selectedInspectorPanel.rawValue
+            preferences.chartSmoothness = chartSmoothness
+        }
+    }
+
+    private func handleCommand(_ action: AppCommandAction) {
+        switch action {
+        case .focusSearch:
+            withAnimation(Motion.spring) {
+                selectedTab = .market
+            }
+            searchFocusRequestID = UUID()
+        case .showHome:
+            withAnimation(Motion.spring) {
+                selectedTab = .overview
+            }
+        case .showMarket:
+            withAnimation(Motion.spring) {
+                selectedTab = .market
+            }
+        case .toggleInspector:
+            if selectedTab != .market {
+                withAnimation(Motion.spring) {
+                    selectedTab = .market
+                    isInspectorOpen = true
+                }
+            } else {
+                withAnimation(Motion.spring) {
+                    isInspectorOpen.toggle()
+                }
+            }
+        case .toggleWatchlist:
+            withAnimation(Motion.spring) {
+                environment.watchlist.toggle(market.selectedInstrument)
+            }
+        }
+    }
+
+    private func handleInstrumentSelectionRequest(_ request: InstrumentSelectionRequest?) {
+        guard let request else { return }
+        withAnimation(Motion.spring) {
+            selectedTab = .market
+        }
+        market.selectInstrument(request.instrument)
+    }
+
+    private func handleCommandRequest(_ request: AppCommandRequest?) {
+        guard let request else { return }
+        handleCommand(request.action)
     }
 
     private func beginBootSequence() {
@@ -379,20 +497,22 @@ struct ContentView: View {
 }
 
 private struct AeviumWorkspace: View {
-    @State private var inspectorTargetOpen = true
     @State private var inspectorReveal: CGFloat = 1.0
-    @State private var selectedInspectorPanel: InspectorPanel = .summary
     @State private var isSettingsPresented = false
 
     @ObservedObject var market: AeviumMarketViewModel
     let points: [GraphPoint]
     let indicatorPoints: [GraphPoint]
     @ObservedObject var watchlist: InstrumentWatchlistStore
+    @ObservedObject var recentInstruments: RecentInstrumentStore
     @Binding var selectedTab: WorkspaceTab
     @Binding var selectedRange: ChartRange
     @Binding var selectedForesight: ForesightRange
     @Binding var selectedIndicators: Set<ForesightIndicator>
     @Binding var chartSmoothness: Double
+    @Binding var isInspectorOpen: Bool
+    @Binding var selectedInspectorPanel: InspectorPanel
+    @Binding var searchFocusRequestID: UUID?
     let displayedRange: ChartRange
     let instrumentType: InstrumentType
     let instrumentSymbol: String
@@ -426,13 +546,16 @@ private struct AeviumWorkspace: View {
                     MarketCommandBar(
                         market: market,
                         watchlist: watchlist,
+                        recentInstruments: recentInstruments,
                         selectedRange: $selectedRange,
                         selectedForesight: $selectedForesight,
                         selectedIndicators: $selectedIndicators,
                         chartSmoothness: $chartSmoothness,
                         syncState: syncState,
-                        isInspectorOpen: inspectorTargetOpen,
-                        onToggleInspector: toggleInspector
+                        isInspectorOpen: isInspectorOpen,
+                        searchFocusRequestID: $searchFocusRequestID,
+                        onToggleInspector: toggleInspector,
+                        onSelectInstrument: market.selectInstrument
                     )
                     .zIndex(30)
                 }
@@ -485,7 +608,7 @@ private struct AeviumWorkspace: View {
                             .frame(width: inspectorWidth, alignment: .trailing)
                             .clipped()
                             .allowsHitTesting(inspectorReveal > 0.01)
-	                        }
+                        }
 
                         if points.isEmpty {
                             MarketSeriesLoadingOverlay(
@@ -509,13 +632,18 @@ private struct AeviumWorkspace: View {
         .sheet(isPresented: $isSettingsPresented) {
             AeviumSettingsView()
         }
+        .onAppear {
+            inspectorReveal = isInspectorOpen ? 1.0 : 0.0
+        }
+        .onChange(of: isInspectorOpen) { _, isOpen in
+            withAnimation(Motion.spring) {
+                inspectorReveal = isOpen ? 1.0 : 0.0
+            }
+        }
     }
 
     private func toggleInspector() {
-        inspectorTargetOpen.toggle()
-        withAnimation(Motion.spring) {
-            inspectorReveal = inspectorTargetOpen ? 1.0 : 0.0
-        }
+        isInspectorOpen.toggle()
     }
 
     private func showMarket() {
@@ -649,93 +777,73 @@ private struct WorkspaceTopBar: View {
 private struct MarketCommandBar: View {
     @ObservedObject var market: AeviumMarketViewModel
     @ObservedObject var watchlist: InstrumentWatchlistStore
+    @ObservedObject var recentInstruments: RecentInstrumentStore
     @Binding var selectedRange: ChartRange
     @Binding var selectedForesight: ForesightRange
     @Binding var selectedIndicators: Set<ForesightIndicator>
     @Binding var chartSmoothness: Double
     let syncState: SyncState
     let isInspectorOpen: Bool
+    @Binding var searchFocusRequestID: UUID?
     let onToggleInspector: () -> Void
+    let onSelectInstrument: (InstrumentMetadata) -> Void
 
     private var isSaved: Bool {
         watchlist.contains(market.selectedInstrument)
     }
 
+    private var quickSwitchInstruments: [InstrumentMetadata] {
+        InstrumentCollection.mergedUnique(
+            primary: watchlist.instruments,
+            secondary: recentInstruments.instruments,
+            excluding: market.selectedInstrument.id,
+            limit: 5
+        )
+    }
+
     var body: some View {
         HStack(spacing: 8) {
-            brandBlock
-
-            Divider()
-                .overlay(Color.white.opacity(0.08))
-                .frame(height: 32)
-
-            InstrumentSearchControl(market: market, width: 260)
-                .layoutPriority(1)
-
-            Button {
-                withAnimation(Motion.spring) {
-                    watchlist.toggle(market.selectedInstrument)
-                }
-            } label: {
-                Image(systemName: isSaved ? "star.fill" : "star")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(isSaved ? Color(red: 0.92, green: 0.78, blue: 0.44) : .white.opacity(0.58))
-                    .frame(width: 34, height: 34)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        isSaved ? Color(red: 0.18, green: 0.15, blue: 0.10).opacity(0.98) : Color(red: 0.08, green: 0.09, blue: 0.11).opacity(0.98),
-                                        isSaved ? Color(red: 0.11, green: 0.10, blue: 0.08).opacity(0.98) : Color(red: 0.05, green: 0.06, blue: 0.08).opacity(0.98)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(Color.white.opacity(isSaved ? 0.08 : 0.05), lineWidth: 1)
-                            )
+            commandGroup {
+                HStack(spacing: 8) {
+                    brandBlock
+                    InstrumentSearchControl(
+                        market: market,
+                        width: 276,
+                        focusRequestID: $searchFocusRequestID
                     )
+                    .layoutPriority(1)
+                    watchlistToggle
+                    if !quickSwitchInstruments.isEmpty {
+                        MarketQuickSwitchStrip(
+                            instruments: quickSwitchInstruments,
+                            onSelectInstrument: onSelectInstrument
+                        )
+                    }
+                }
             }
-            .buttonStyle(.plain)
-            .help(isSaved ? "Remove from watchlist" : "Add to watchlist")
 
-            AeviumRangeSelector(selectedRange: $selectedRange)
-            ForesightSelector(selectedForesight: $selectedForesight)
-            IndicatorMenuButton(selectedIndicators: $selectedIndicators)
-            ChartResolutionControl(chartSmoothness: $chartSmoothness)
+            commandGroup {
+                HStack(spacing: 6) {
+                    AeviumRangeSelector(selectedRange: $selectedRange)
+                    ForesightSelector(selectedForesight: $selectedForesight)
+                }
+            }
+
+            commandGroup {
+                HStack(spacing: 6) {
+                    IndicatorMenuButton(selectedIndicators: $selectedIndicators)
+                    ChartResolutionControl(chartSmoothness: $chartSmoothness)
+                }
+            }
 
             Spacer(minLength: 8)
 
-            SyncStatusStrip(state: syncState)
-
-            Button(action: onToggleInspector) {
-                Image(systemName: isInspectorOpen ? "sidebar.right" : "sidebar.leading")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.62))
-                    .frame(width: 34, height: 34)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color(red: 0.08, green: 0.09, blue: 0.11).opacity(0.98),
-                                        Color(red: 0.05, green: 0.06, blue: 0.08).opacity(0.98)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(Color.white.opacity(isInspectorOpen ? 0.08 : 0.05), lineWidth: 1)
-                            )
-                    )
+            commandGroup {
+                HStack(spacing: 8) {
+                    SyncStatusStrip(state: syncState)
+                    inspectorToggle
+                }
             }
-            .buttonStyle(.plain)
-            .help(isInspectorOpen ? "Hide inspector" : "Show inspector")
         }
         .padding(.leading, 18)
         .padding(.trailing, 18)
@@ -771,7 +879,123 @@ private struct MarketCommandBar: View {
                 .font(.system(size: 13, weight: .semibold, design: .default))
                 .foregroundStyle(.white.opacity(0.76))
         }
-        .frame(width: 128, alignment: .leading)
+        .frame(width: 108, alignment: .leading)
+    }
+
+    private var watchlistToggle: some View {
+        Button {
+            withAnimation(Motion.spring) {
+                watchlist.toggle(market.selectedInstrument)
+            }
+        } label: {
+            Image(systemName: isSaved ? "star.fill" : "star")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isSaved ? Color(red: 0.92, green: 0.78, blue: 0.44) : .white.opacity(0.58))
+                .frame(width: 34, height: 34)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    isSaved ? Color(red: 0.18, green: 0.15, blue: 0.10).opacity(0.98) : Color(red: 0.08, green: 0.09, blue: 0.11).opacity(0.98),
+                                    isSaved ? Color(red: 0.11, green: 0.10, blue: 0.08).opacity(0.98) : Color(red: 0.05, green: 0.06, blue: 0.08).opacity(0.98)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(Color.white.opacity(isSaved ? 0.08 : 0.05), lineWidth: 1)
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .help(isSaved ? "Remove from watchlist" : "Add to watchlist")
+    }
+
+    private var inspectorToggle: some View {
+        Button(action: onToggleInspector) {
+            Image(systemName: isInspectorOpen ? "sidebar.right" : "sidebar.leading")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.62))
+                .frame(width: 34, height: 34)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.08, green: 0.09, blue: 0.11).opacity(0.98),
+                                    Color(red: 0.05, green: 0.06, blue: 0.08).opacity(0.98)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(Color.white.opacity(isInspectorOpen ? 0.08 : 0.05), lineWidth: 1)
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .help(isInspectorOpen ? "Hide inspector" : "Show inspector")
+    }
+
+    private func commandGroup<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 0) {
+            content()
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.018))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.white.opacity(0.035), lineWidth: 1)
+                )
+        )
+    }
+}
+
+private struct MarketQuickSwitchStrip: View {
+    let instruments: [InstrumentMetadata]
+    let onSelectInstrument: (InstrumentMetadata) -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(instruments.prefix(4), id: \.id) { instrument in
+                Button {
+                    onSelectInstrument(instrument)
+                } label: {
+                    Text(quickLabel(for: instrument))
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.68))
+                        .lineLimit(1)
+                        .frame(minWidth: 46, maxWidth: 58)
+                        .frame(height: 28)
+                        .padding(.horizontal, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(Color.white.opacity(0.05))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .stroke(Color.white.opacity(0.045), lineWidth: 1)
+                                )
+                        )
+                }
+                .buttonStyle(.plain)
+                .help("Open \(instrument.displaySymbol)")
+            }
+        }
+    }
+
+    private func quickLabel(for instrument: InstrumentMetadata) -> String {
+        let compact = instrument.compactTitle
+            .replacingOccurrences(of: " / ", with: "/")
+            .uppercased()
+        return compact.count > 8 ? String(compact.prefix(8)) : compact
     }
 }
 
@@ -782,15 +1006,13 @@ struct AeviumSettingsView: View {
     @State private var statusMessage = "Stock data uses Finnhub. Crypto data uses Binance public endpoints and needs no key."
     @State private var statusIsError = false
 
-    private var installedVersionLabel: String {
+    private var appVersionLabel: String {
         let shortVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         let buildVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
 
         switch (shortVersion, buildVersion) {
-        case let (shortVersion?, buildVersion?) where !shortVersion.isEmpty && !buildVersion.isEmpty:
-            return "Version \(shortVersion) (\(buildVersion))"
         case let (shortVersion?, _) where !shortVersion.isEmpty:
-            return "Version \(shortVersion)"
+            return "v\(shortVersion)"
         case let (_, buildVersion?) where !buildVersion.isEmpty:
             return "Build \(buildVersion)"
         default:
@@ -800,31 +1022,21 @@ struct AeviumSettingsView: View {
 
     private var buildFlavorLabel: String {
         #if DEBUG
-        return "Debug build"
+        return "Debug"
         #else
-        return "Release build"
+        return "Release"
         #endif
     }
 
-    private var buildToolchainLabel: String? {
-        let xcodeBuild = Bundle.main.object(forInfoDictionaryKey: "DTXcodeBuild") as? String
+    private var buildContextLabel: String? {
         let sdkName = Bundle.main.object(forInfoDictionaryKey: "DTSDKName") as? String
 
-        let xcodePart = xcodeBuild?.trimmingCharacters(in: .whitespacesAndNewlines)
         let sdkPart = sdkName?
             .replacingOccurrences(of: "macosx", with: "macOS ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        switch (xcodePart, sdkPart) {
-        case let (xcode?, sdk?) where !xcode.isEmpty && !sdk.isEmpty:
-            return "Xcode \(xcode) • \(sdk)"
-        case let (xcode?, _) where !xcode.isEmpty:
-            return "Xcode \(xcode)"
-        case let (_, sdk?) where !sdk.isEmpty:
-            return sdk
-        default:
-            return nil
-        }
+        guard let sdkPart, !sdkPart.isEmpty else { return buildFlavorLabel }
+        return "\(buildFlavorLabel) • \(sdkPart)"
     }
 
     private var hasSavedKey: Bool {
@@ -845,13 +1057,9 @@ struct AeviumSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     HStack(spacing: 8) {
-                        Text(installedVersionLabel)
+                        Text(appVersionLabel)
                             .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.82))
-
-                        Text(buildFlavorLabel)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.58))
                     }
                     .padding(.horizontal, 10)
                     .frame(height: 28)
@@ -865,8 +1073,8 @@ struct AeviumSettingsView: View {
                     )
                     .padding(.top, 4)
 
-                    if let buildToolchainLabel {
-                        Text(buildToolchainLabel)
+                    if let buildContextLabel {
+                        Text(buildContextLabel)
                             .font(.system(size: 10.5, weight: .medium, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.38))
                     }
@@ -3377,6 +3585,7 @@ private struct ChartTopControls: View {
 private struct InstrumentSearchControl: View {
     @ObservedObject var market: AeviumMarketViewModel
     var width: CGFloat = 180
+    @Binding var focusRequestID: UUID?
     @FocusState private var isFocused: Bool
     @State private var highlightedResultID: InstrumentID?
     @State private var keyMonitor: Any?
@@ -3386,11 +3595,21 @@ private struct InstrumentSearchControl: View {
     }
 
     private var shouldShowResults: Bool {
-        isFocused && (market.isSearching || !market.searchResults.isEmpty || trimmedQuery.count >= 2 || market.errorMessage != nil)
+        isFocused
     }
 
     private var visibleResults: [InstrumentMetadata] {
         Array(market.searchResults.prefix(7))
+    }
+
+    init(
+        market: AeviumMarketViewModel,
+        width: CGFloat = 180,
+        focusRequestID: Binding<UUID?> = .constant(nil)
+    ) {
+        self.market = market
+        self.width = width
+        self._focusRequestID = focusRequestID
     }
 
     var body: some View {
@@ -3469,19 +3688,40 @@ private struct InstrumentSearchControl: View {
         .onChange(of: market.searchQuery) { _, _ in
             alignHighlightToResults(preferFirst: false)
         }
+        .onChange(of: focusRequestID) { _, newValue in
+            guard newValue != nil else { return }
+            focusSearchField()
+        }
         .onDisappear {
             removeKeyMonitor()
+        }
+        .onAppear {
+            if focusRequestID != nil {
+                focusSearchField()
+            }
         }
         .animation(Motion.spring, value: shouldShowResults)
     }
 
     private var searchMenu: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if market.isSearching {
+            if let error = market.searchErrorMessage, !error.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Search unavailable")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.95, green: 0.72, blue: 0.58))
+                    Text(error)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.44))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+            } else if market.isSearching {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Searching instruments")
+                    Text("Searching symbols")
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.52))
                 }
@@ -3496,19 +3736,34 @@ private struct InstrumentSearchControl: View {
                     Text("No matches")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.68))
-                    Text("Press Return to resolve \(trimmedQuery.uppercased()).")
+                    Text("Press Return to try \(trimmedQuery.uppercased()) anyway.")
                         .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.40))
                 }
                 .padding(.horizontal, 10)
                 .frame(height: 45, alignment: .leading)
-            } else if let error = market.errorMessage {
-                Text(error)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(Color(red: 0.95, green: 0.55, blue: 0.55))
-                    .lineLimit(2)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
+            } else if trimmedQuery.count == 1 {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Keep typing")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.68))
+                    Text("Use at least 2 characters to search, or press Return to resolve directly.")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.40))
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 45, alignment: .leading)
+            } else {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Search symbols")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.68))
+                    Text("Type a ticker or company name. Return opens the top match.")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.40))
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 45, alignment: .leading)
             }
         }
         .padding(5)
@@ -3656,6 +3911,14 @@ private struct InstrumentSearchControl: View {
         }
 
         highlightedResultID = preferFirst ? results.first?.id : nil
+    }
+
+    private func focusSearchField() {
+        DispatchQueue.main.async {
+            isFocused = true
+            alignHighlightToResults(preferFirst: true)
+            focusRequestID = nil
+        }
     }
 }
 
@@ -3893,7 +4156,7 @@ private struct IndicatorMenuButton: View {
 
                 Spacer(minLength: 0)
 
-                Text(selectedCount > 0 ? "\(selectedCount) on" : "None")
+                Text(selectedCount > 0 ? "On" : "Off")
                     .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(.white.opacity(selectedCount > 0 ? 0.48 : 0.34))
 

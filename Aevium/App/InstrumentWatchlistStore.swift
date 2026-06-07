@@ -1,5 +1,31 @@
 import Foundation
 
+enum InstrumentCollection {
+    static func mergedUnique(
+        primary: [InstrumentMetadata],
+        secondary: [InstrumentMetadata],
+        excluding excludedID: InstrumentID? = nil,
+        limit: Int
+    ) -> [InstrumentMetadata] {
+        guard limit > 0 else { return [] }
+
+        var seen = Set<InstrumentID>()
+        var result: [InstrumentMetadata] = []
+        result.reserveCapacity(limit)
+
+        for instrument in primary + secondary {
+            guard instrument.id != excludedID, !seen.contains(instrument.id) else { continue }
+            seen.insert(instrument.id)
+            result.append(instrument)
+            if result.count == limit {
+                break
+            }
+        }
+
+        return result
+    }
+}
+
 @MainActor
 final class InstrumentWatchlistStore: ObservableObject {
     nonisolated static let defaultStorageKey = "Aevium.instrumentWatchlist.v1"
@@ -101,7 +127,7 @@ final class InstrumentWatchlistStore: ObservableObject {
         return unique(seed, maxItems: maxItems)
     }
 
-    private static func unique(_ instruments: [InstrumentMetadata], maxItems: Int) -> [InstrumentMetadata] {
+    static func unique(_ instruments: [InstrumentMetadata], maxItems: Int) -> [InstrumentMetadata] {
         var seen = Set<InstrumentID>()
         var result: [InstrumentMetadata] = []
         result.reserveCapacity(min(maxItems, instruments.count))
@@ -146,4 +172,69 @@ final class InstrumentWatchlistStore: ObservableObject {
             session: "24/7"
         )
     ]
+}
+
+@MainActor
+final class RecentInstrumentStore: ObservableObject {
+    nonisolated static let defaultStorageKey = "Aevium.recentInstruments.v1"
+
+    @Published private(set) var instruments: [InstrumentMetadata] {
+        didSet {
+            persist()
+        }
+    }
+
+    private let defaults: UserDefaults
+    private let storageKey: String
+    private let maxItems: Int
+
+    init(
+        defaults: UserDefaults = .standard,
+        storageKey: String = RecentInstrumentStore.defaultStorageKey,
+        maxItems: Int = 8
+    ) {
+        self.defaults = defaults
+        self.storageKey = storageKey
+        self.maxItems = max(1, maxItems)
+        self.instruments = Self.load(
+            defaults: defaults,
+            storageKey: storageKey,
+            maxItems: max(1, maxItems)
+        )
+        persist()
+    }
+
+    func remember(_ instrument: InstrumentMetadata) {
+        var next = instruments.filter { $0.id != instrument.id }
+        next.insert(instrument, at: 0)
+        instruments = Array(next.prefix(maxItems))
+    }
+
+    func remove(id: InstrumentID) {
+        instruments.removeAll { $0.id == id }
+    }
+
+    func clear() {
+        instruments = []
+    }
+
+    private func persist() {
+        guard let data = try? JSONEncoder().encode(instruments) else { return }
+        defaults.set(data, forKey: storageKey)
+    }
+
+    private static func load(
+        defaults: UserDefaults,
+        storageKey: String,
+        maxItems: Int
+    ) -> [InstrumentMetadata] {
+        guard
+            let data = defaults.data(forKey: storageKey),
+            let decoded = try? JSONDecoder().decode([InstrumentMetadata].self, from: data)
+        else {
+            return []
+        }
+
+        return InstrumentWatchlistStore.unique(decoded, maxItems: maxItems)
+    }
 }
