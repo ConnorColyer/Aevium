@@ -2,20 +2,22 @@ import Foundation
 import Sparkle
 
 @MainActor
-final class AppUpdater: ObservableObject {
+final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
+    static let feedURLString = "https://connorcolyer.github.io/Aevium/appcast.xml"
+
     @Published private(set) var canCheckForUpdates = false
 
-    private let updaterController: SPUStandardUpdaterController
+    private lazy var updaterController = SPUStandardUpdaterController(
+        startingUpdater: false,
+        updaterDelegate: self,
+        userDriverDelegate: nil
+    )
     private var canCheckObservation: NSKeyValueObservation?
     private let isConfigured: Bool
 
     init(bundle: Bundle = .main) {
-        updaterController = SPUStandardUpdaterController(
-            startingUpdater: false,
-            updaterDelegate: nil,
-            userDriverDelegate: nil
-        )
         isConfigured = !Self.isRunningTests && Self.hasRequiredConfiguration(in: bundle)
+        super.init()
 
         guard isConfigured else {
             return
@@ -47,27 +49,28 @@ final class AppUpdater: ObservableObject {
         updaterController.updater.checkForUpdates()
     }
 
+    func feedURLString(for updater: SPUUpdater) -> String? {
+        Self.feedURLString
+    }
+
     private static func hasRequiredConfiguration(in bundle: Bundle) -> Bool {
         guard
-            let feedURL = bundle.object(forInfoDictionaryKey: "SUFeedURL") as? String,
             let publicKey = bundle.object(forInfoDictionaryKey: "SUPublicEDKey") as? String
         else {
             return false
         }
 
-        let sanitizedFeedURL = feedURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let sanitizedPublicKey = publicKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard
-            let parsedFeedURL = URL(string: sanitizedFeedURL),
+            let parsedFeedURL = URL(string: feedURLString),
             let host = parsedFeedURL.host,
             !host.isEmpty
         else {
             return false
         }
 
-        return !sanitizedFeedURL.isEmpty &&
-            !sanitizedPublicKey.isEmpty &&
+        return !sanitizedPublicKey.isEmpty &&
             !sanitizedPublicKey.contains("REPLACE_WITH_SPARKLE_PUBLIC_ED_KEY")
     }
 

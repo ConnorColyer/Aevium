@@ -24,8 +24,6 @@
     <true/>
     <key>SUEnableAutomaticChecks</key>
     <true/>
-    <key>SUFeedURL</key>
-    <string>$(AEVIUM_SPARKLE_FEED_URL)</string>
     <key>SUPublicEDKey</key>
     <string>$(AEVIUM_SPARKLE_PUBLIC_ED_KEY)</string>
 </dict>

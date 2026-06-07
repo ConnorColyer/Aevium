@@ -53,7 +53,8 @@ The default feed URL in `Aevium/Config/AppConfig.xcconfig` expects the Pages sit
 https://connorcolyer.github.io/Aevium/appcast.xml
 ```
 
-If the repository owner or name changes, update `AEVIUM_SPARKLE_FEED_URL`.
+If the repository owner or name changes, update `AppUpdater.feedURLString` in
+`Aevium/App/AppUpdater.swift`.
 
 ### 3. Add release secrets
 
