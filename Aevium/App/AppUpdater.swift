@@ -13,9 +13,11 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
         userDriverDelegate: nil
     )
     private var canCheckObservation: NSKeyValueObservation?
+    private let currentBundleVersion: String
     private let isConfigured: Bool
 
     init(bundle: Bundle = .main) {
+        currentBundleVersion = Self.bundleVersion(in: bundle)
         isConfigured = !Self.isRunningTests && Self.hasRequiredConfiguration(in: bundle)
         super.init()
 
@@ -53,6 +55,31 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
         Self.feedURLString
     }
 
+    func bestValidUpdate(in appcast: SUAppcast, for updater: SPUUpdater) -> SUAppcastItem? {
+        let comparator = SUStandardVersionComparator.default
+
+        let bestItem = appcast.items
+            .filter { item in
+                item.isMacOsUpdate &&
+                item.minimumOperatingSystemVersionIsOK &&
+                item.maximumOperatingSystemVersionIsOK &&
+                item.minimumUpdateVersionIsOK &&
+                !item.isInformationOnlyUpdate &&
+                comparator.compareVersion(currentBundleVersion, toVersion: item.versionString) == .orderedAscending
+            }
+            .max { lhs, rhs in
+                comparator.compareVersion(lhs.versionString, toVersion: rhs.versionString) == .orderedAscending
+            }
+
+        if let bestItem {
+            NSLog("Sparkle selected update %@ over installed build %@", bestItem.versionString, currentBundleVersion)
+            return bestItem
+        }
+
+        NSLog("Sparkle found no update newer than installed build %@", currentBundleVersion)
+        return SUAppcastItem.empty()
+    }
+
     private static func hasRequiredConfiguration(in bundle: Bundle) -> Bool {
         guard
             let publicKey = bundle.object(forInfoDictionaryKey: "SUPublicEDKey") as? String
@@ -76,5 +103,23 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
 
     private static var isRunningTests: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    private static func bundleVersion(in bundle: Bundle) -> String {
+        if let buildVersion = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String {
+            let sanitizedBuildVersion = buildVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !sanitizedBuildVersion.isEmpty {
+                return sanitizedBuildVersion
+            }
+        }
+
+        if let shortVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
+            let sanitizedShortVersion = shortVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !sanitizedShortVersion.isEmpty {
+                return sanitizedShortVersion
+            }
+        }
+
+        return "0"
     }
 }

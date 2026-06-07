@@ -40,6 +40,21 @@ private func liquidGlassSurface<S: Shape>(
         .overlay(shape.stroke(Color.white.opacity(strokeOpacity), lineWidth: 1))
 }
 
+@ViewBuilder
+private func liquidGlassControlSurface<S: Shape>(
+    _ shape: S,
+    tint: Color = Color(red: 0.62, green: 0.82, blue: 0.90).opacity(0.16),
+    fallbackFill: Color = Color.white.opacity(0.055),
+    strokeOpacity: Double = 0.065
+) -> some View {
+    liquidGlassSurface(
+        shape,
+        tint: tint,
+        fallbackFill: fallbackFill,
+        strokeOpacity: strokeOpacity
+    )
+}
+
 private enum WorkspaceTab {
     case market
     case overview
@@ -537,14 +552,13 @@ private struct AeviumRail: View {
         }
         .frame(width: 74)
         .background(
-            LinearGradient(
-                colors: [
-                    Color.black.opacity(0.22),
-                    Color.black.opacity(0.10)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
+            liquidGlassControlSurface(
+                Rectangle(),
+                tint: Color(red: 0.58, green: 0.79, blue: 0.95).opacity(0.10),
+                fallbackFill: Color.black.opacity(0.12),
+                strokeOpacity: 0.04
             )
+            .shadow(color: Color.black.opacity(0.16), radius: 16, x: 6, y: 0)
         )
     }
 
@@ -562,18 +576,22 @@ private struct AeviumRail: View {
             .frame(width: 54, height: 48)
             .background {
                 if active {
-                    liquidGlassSurface(
+                    liquidGlassControlSurface(
                         RoundedRectangle(cornerRadius: 8, style: .continuous),
-                        fallbackFill: Color.white.opacity(0.085)
+                        tint: Color(red: 0.68, green: 0.88, blue: 0.84).opacity(0.18),
+                        fallbackFill: Color.white.opacity(0.075),
+                        strokeOpacity: 0.09
                     )
-                        .matchedGeometryEffect(id: "rail-selection", in: railSelectionNamespace)
-                        .overlay(alignment: .leading) {
+                    .overlay(alignment: .leading) {
+                        if active {
                             Capsule()
                                 .fill(Color(red: 0.72, green: 0.88, blue: 0.82))
                                 .frame(width: 3, height: 22)
                                 .offset(x: -7)
                         }
-                        .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 4)
+                    }
+                    .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 4)
+                    .matchedGeometryEffect(id: "rail-selection", in: railSelectionNamespace)
                 }
             }
         }
@@ -3750,12 +3768,12 @@ private struct AeviumRangeSelector: View {
         }
         .padding(4)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(red: 0.07, green: 0.08, blue: 0.10).opacity(0.98))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.white.opacity(0.055), lineWidth: 1)
-                )
+            liquidGlassControlSurface(
+                RoundedRectangle(cornerRadius: 8, style: .continuous),
+                tint: Color(red: 0.58, green: 0.76, blue: 0.92).opacity(0.08),
+                fallbackFill: Color.black.opacity(0.18),
+                strokeOpacity: 0.055
+            )
         )
     }
 }
@@ -3793,12 +3811,12 @@ private struct ForesightSelector: View {
         }
         .padding(4)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(red: 0.07, green: 0.08, blue: 0.10).opacity(0.98))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.white.opacity(0.055), lineWidth: 1)
-                )
+            liquidGlassControlSurface(
+                RoundedRectangle(cornerRadius: 8, style: .continuous),
+                tint: Color(red: 0.58, green: 0.76, blue: 0.92).opacity(0.08),
+                fallbackFill: Color.black.opacity(0.18),
+                strokeOpacity: 0.055
+            )
         )
         .help("Foresight horizon")
     }
@@ -4027,18 +4045,19 @@ private struct ChartResolutionControl: View {
                 .foregroundStyle(.white.opacity(0.55))
 
             Slider(value: $chartSmoothness, in: 0...1)
+                .controlSize(.small)
                 .tint(Color(red: 0.77, green: 0.85, blue: 0.92))
                 .frame(width: 120)
         }
         .padding(.horizontal, 10)
         .frame(height: 35)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(red: 0.07, green: 0.08, blue: 0.10).opacity(0.98))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.white.opacity(0.055), lineWidth: 1)
-                )
+            liquidGlassControlSurface(
+                RoundedRectangle(cornerRadius: 8, style: .continuous),
+                tint: Color(red: 0.58, green: 0.76, blue: 0.92).opacity(0.10),
+                fallbackFill: Color.black.opacity(0.18),
+                strokeOpacity: 0.055
+            )
         )
         .help("Chart smoothing from raw to super smooth")
     }
