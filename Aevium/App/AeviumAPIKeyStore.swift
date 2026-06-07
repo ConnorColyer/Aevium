@@ -4,39 +4,36 @@ import Security
 enum AeviumAPIKeyStore {
     static let didChangeNotification = Notification.Name("AeviumAPIKeyStoreDidChange")
 
-    private static let legacyFinnhubDefaultsKey = "FinnhubAPIKey"
-    private static let finnhubAccount = "finnhub.api.key"
+    private static let finnhubDefaultsKey = "FinnhubAPIKey"
+    private static let legacyKeychainAccount = "finnhub.api.key"
 
     static func finnhubAPIKey() -> String? {
-        if let key = try? keychainValue(account: finnhubAccount), !key.isEmpty {
-            return key
+        if let localKey = UserDefaults.standard
+            .string(forKey: finnhubDefaultsKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !localKey.isEmpty {
+            return localKey
         }
 
-        guard let legacyKey = UserDefaults.standard
-            .string(forKey: legacyFinnhubDefaultsKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            !legacyKey.isEmpty
-        else {
+        guard let migratedKey = try? keychainValue(account: legacyKeychainAccount), !migratedKey.isEmpty else {
             return nil
         }
 
-        if (try? setKeychainValue(legacyKey, account: finnhubAccount)) != nil {
-            UserDefaults.standard.removeObject(forKey: legacyFinnhubDefaultsKey)
-        }
-
-        return legacyKey
+        UserDefaults.standard.set(migratedKey, forKey: finnhubDefaultsKey)
+        _ = try? deleteKeychainValue(account: legacyKeychainAccount)
+        return migratedKey
     }
 
     static func setFinnhubAPIKey(_ rawKey: String) throws {
         let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if key.isEmpty {
-            try deleteKeychainValue(account: finnhubAccount)
+            UserDefaults.standard.removeObject(forKey: finnhubDefaultsKey)
         } else {
-            try setKeychainValue(key, account: finnhubAccount)
+            UserDefaults.standard.set(key, forKey: finnhubDefaultsKey)
         }
 
-        UserDefaults.standard.removeObject(forKey: legacyFinnhubDefaultsKey)
+        _ = try? deleteKeychainValue(account: legacyKeychainAccount)
         NotificationCenter.default.post(name: didChangeNotification, object: nil)
     }
 
@@ -44,14 +41,14 @@ enum AeviumAPIKeyStore {
         finnhubAPIKey()?.isEmpty == false
     }
 
-    private static var service: String {
+    private static var legacyKeychainService: String {
         Bundle.main.bundleIdentifier ?? "com.aevium.desktop"
     }
 
     private static func keychainQuery(account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
+            kSecAttrService as String: legacyKeychainService,
             kSecAttrAccount as String: account
         ]
     }
@@ -77,33 +74,6 @@ enum AeviumAPIKeyStore {
         }
 
         return String(data: data, encoding: .utf8)
-    }
-
-    private static func setKeychainValue(_ value: String, account: String) throws {
-        let data = Data(value.utf8)
-        let query = keychainQuery(account: account)
-        let update: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        ]
-
-        let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
-        if updateStatus == errSecSuccess {
-            return
-        }
-
-        guard updateStatus == errSecItemNotFound else {
-            throw KeychainError(status: updateStatus)
-        }
-
-        var addQuery = query
-        addQuery[kSecValueData as String] = data
-        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-
-        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
-        guard addStatus == errSecSuccess else {
-            throw KeychainError(status: addStatus)
-        }
     }
 
     private static func deleteKeychainValue(account: String) throws {

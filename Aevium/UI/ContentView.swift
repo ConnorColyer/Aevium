@@ -839,7 +839,7 @@ struct AeviumSettingsView: View {
                         .font(.system(size: 21, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.94))
 
-                    Text("Provider keys stay in your macOS Keychain, not in the project folder or Git history.")
+                    Text("Provider keys stay on this Mac and out of the project folder and Git history.")
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.52))
                         .fixedSize(horizontal: false, vertical: true)
@@ -1068,7 +1068,7 @@ struct AeviumSettingsView: View {
             statusIsError = false
             statusMessage = finnhubAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 ? "Finnhub key removed. Crypto data will continue to work through Binance."
-                : "Saved to macOS Keychain. Equity searches and live stock data will use this key."
+                : "Saved on this Mac. Equity searches and live stock data will use this key."
         } catch {
             statusIsError = true
             statusMessage = "Could not save key: \(error.localizedDescription)"
