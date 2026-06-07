@@ -806,6 +806,27 @@ struct AeviumSettingsView: View {
         #endif
     }
 
+    private var buildToolchainLabel: String? {
+        let xcodeBuild = Bundle.main.object(forInfoDictionaryKey: "DTXcodeBuild") as? String
+        let sdkName = Bundle.main.object(forInfoDictionaryKey: "DTSDKName") as? String
+
+        let xcodePart = xcodeBuild?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sdkPart = sdkName?
+            .replacingOccurrences(of: "macosx", with: "macOS ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch (xcodePart, sdkPart) {
+        case let (xcode?, sdk?) where !xcode.isEmpty && !sdk.isEmpty:
+            return "Xcode \(xcode) • \(sdk)"
+        case let (xcode?, _) where !xcode.isEmpty:
+            return "Xcode \(xcode)"
+        case let (_, sdk?) where !sdk.isEmpty:
+            return sdk
+        default:
+            return nil
+        }
+    }
+
     private var hasSavedKey: Bool {
         AeviumAPIKeyStore.hasFinnhubAPIKey()
     }
@@ -842,7 +863,13 @@ struct AeviumSettingsView: View {
                                     .stroke(Color.white.opacity(0.06), lineWidth: 1)
                             )
                     )
-                        .padding(.top, 4)
+                    .padding(.top, 4)
+
+                    if let buildToolchainLabel {
+                        Text(buildToolchainLabel)
+                            .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.38))
+                    }
                 }
 
                 Spacer()
