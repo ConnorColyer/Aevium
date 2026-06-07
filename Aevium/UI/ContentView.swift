@@ -798,6 +798,14 @@ struct AeviumSettingsView: View {
         }
     }
 
+    private var buildFlavorLabel: String {
+        #if DEBUG
+        return "Debug build"
+        #else
+        return "Release build"
+        #endif
+    }
+
     private var hasSavedKey: Bool {
         AeviumAPIKeyStore.hasFinnhubAPIKey()
     }
@@ -815,19 +823,25 @@ struct AeviumSettingsView: View {
                         .foregroundStyle(.white.opacity(0.52))
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Text(installedVersionLabel)
-                        .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.82))
-                        .padding(.horizontal, 10)
-                        .frame(height: 28)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(Color(red: 0.08, green: 0.09, blue: 0.11).opacity(0.98))
-                                .overlay(
-                                    Capsule(style: .continuous)
-                                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
-                                )
-                        )
+                    HStack(spacing: 8) {
+                        Text(installedVersionLabel)
+                            .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.82))
+
+                        Text(buildFlavorLabel)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.58))
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(height: 28)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color(red: 0.08, green: 0.09, blue: 0.11).opacity(0.98))
+                            .overlay(
+                                Capsule(style: .continuous)
+                                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                            )
+                    )
                         .padding(.top, 4)
                 }
 
