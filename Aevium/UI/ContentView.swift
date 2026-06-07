@@ -22,13 +22,22 @@ private func liquidGlassSurface<S: Shape>(
     fallbackFill: Color = Color.black.opacity(0.16),
     strokeOpacity: Double = 0.08
 ) -> some View {
-    if #available(macOS 26.0, *) {
-        shape.glassEffect(.regular.tint(tint), in: shape)
-    } else {
-        shape
-            .fill(fallbackFill)
-            .overlay(shape.stroke(Color.white.opacity(strokeOpacity), lineWidth: 1))
-    }
+    shape
+        .fill(fallbackFill.opacity(0.92))
+        .overlay(
+            shape
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            tint.opacity(0.38),
+                            .white.opacity(0.05)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .overlay(shape.stroke(Color.white.opacity(strokeOpacity), lineWidth: 1))
 }
 
 private enum WorkspaceTab {
