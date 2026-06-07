@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct AeviumApp: App {
     @StateObject private var environment = AppEnvironment()
+    @StateObject private var updater = AppUpdater()
 
     init() {
         UserDefaults.standard.register(defaults: [
@@ -19,6 +20,14 @@ struct AeviumApp: App {
         }
         .windowResizability(.contentMinSize)
         .windowStyle(.hiddenTitleBar)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") {
+                    updater.checkForUpdates()
+                }
+                .disabled(!updater.canCheckForUpdates)
+            }
+        }
 
         Settings {
             AeviumSettingsView()

@@ -21,3 +21,10 @@ Use Git tags for versions instead of separate folders/branches:
 1. Commit changes to `main`.
 2. Run `./scripts/release.sh 0.1.0`.
 3. The script pushes `main`, creates tag `v0.1.0`, and pushes the tag.
+
+## Automatic updates
+
+- The app now includes Sparkle and performs a background update check on launch when the update feed and public key are configured.
+- Sparkle defaults live in `Aevium/Config/AppConfig.xcconfig`.
+- Releases are distributed as standalone GitHub artifacts rather than through the App Store.
+- Release automation is documented in `docs/release-automation.md`.

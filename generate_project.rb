@@ -3,6 +3,7 @@ require 'xcodeproj'
 project_path = 'Aevium.xcodeproj'
 app_dir = 'Aevium'
 tests_dir = 'AeviumTests'
+app_config_path = 'Aevium/Config/AppConfig.xcconfig'
 
 compiled_source_extensions = %w[swift metal m mm c cc cpp].freeze
 
@@ -35,6 +36,8 @@ project.root_object.attributes['LastUpgradeCheck'] = '1600'
 main_group = project.main_group
 app_group = main_group.new_group('Aevium')
 tests_group = main_group.new_group('AeviumTests')
+config_group = app_group.new_group('Config')
+app_config_ref = config_group.new_file(app_config_path)
 
 source_files = file_paths(app_dir, compiled_source_extensions)
 resource_files = Dir.glob(File.join(app_dir, 'Resources', '**', '*'))
@@ -47,6 +50,23 @@ test_resource_files = Dir.glob(File.join(tests_dir, '**', '*'))
 
 target = project.new_target(:application, 'Aevium', :osx, '14.0')
 target.product_name = 'Aevium'
+
+sparkle_package = project.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+sparkle_package.repositoryURL = 'https://github.com/sparkle-project/Sparkle'
+sparkle_package.requirement = {
+  'kind' => 'upToNextMajorVersion',
+  'minimumVersion' => '2.9.2'
+}
+project.root_object.package_references << sparkle_package
+
+sparkle_product = project.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
+sparkle_product.package = sparkle_package
+sparkle_product.product_name = 'Sparkle'
+target.package_product_dependencies << sparkle_product
+
+sparkle_build_file = project.new(Xcodeproj::Project::Object::PBXBuildFile)
+sparkle_build_file.product_ref = sparkle_product
+target.frameworks_build_phase.files << sparkle_build_file
 
 source_files.each do |path|
   file_ref = app_group.new_file(path)
@@ -104,8 +124,6 @@ shared_project_settings = {
   'CLANG_WARN_UNGUARDED_AVAILABILITY' => 'YES_AGGRESSIVE',
   'CLANG_WARN_UNREACHABLE_CODE' => 'YES',
   'CLANG_WARN__DUPLICATE_METHOD_MATCH' => 'YES',
-  'CODE_SIGNING_ALLOWED' => 'NO',
-  'CODE_SIGNING_REQUIRED' => 'NO',
   'GCC_C_LANGUAGE_STANDARD' => 'gnu11',
   'GCC_NO_COMMON_BLOCKS' => 'YES',
   'GCC_WARN_64_TO_32_BIT_CONVERSION' => 'YES',
@@ -114,14 +132,16 @@ shared_project_settings = {
   'GCC_WARN_UNINITIALIZED_AUTOS' => 'YES_AGGRESSIVE',
   'GCC_WARN_UNUSED_FUNCTION' => 'YES',
   'GCC_WARN_UNUSED_VARIABLE' => 'YES',
-  'GENERATE_INFOPLIST_FILE' => 'YES',
-  'INFOPLIST_KEY_CFBundleDisplayName' => 'Aevium',
-  'INFOPLIST_KEY_NSHumanReadableCopyright' => 'Aevium',
+  'CURRENT_PROJECT_VERSION' => '10',
+  'GENERATE_INFOPLIST_FILE' => 'NO',
+  'INFOPLIST_FILE' => 'Aevium/App/Info.plist',
   'MACOSX_DEPLOYMENT_TARGET' => '14.0',
+  'MARKETING_VERSION' => '0.0.10',
   'MTL_FAST_MATH' => 'YES',
   'PRODUCT_BUNDLE_IDENTIFIER' => 'com.aevium.desktop',
   'PRODUCT_NAME' => '$(TARGET_NAME)',
-  'SWIFT_VERSION' => '5.0'
+  'SWIFT_VERSION' => '5.0',
+  'VERSIONING_SYSTEM' => 'apple-generic'
 }
 
 project_debug_settings = shared_project_settings.merge(
@@ -154,7 +174,7 @@ target_debug_settings = {
   'CODE_SIGNING_ALLOWED' => 'NO',
   'CODE_SIGNING_REQUIRED' => 'NO',
   'COMBINE_HIDPI_IMAGES' => 'YES',
-  'GENERATE_INFOPLIST_FILE' => 'YES',
+  'ENABLE_HARDENED_RUNTIME' => 'NO',
   'LD_RUNPATH_SEARCH_PATHS' => '$(inherited) @executable_path/../Frameworks',
   'MACOSX_DEPLOYMENT_TARGET' => '14.0',
   'PRODUCT_BUNDLE_IDENTIFIER' => 'com.aevium.desktop',
@@ -163,7 +183,11 @@ target_debug_settings = {
   'SWIFT_VERSION' => '5.0'
 }
 
-target_release_settings = target_debug_settings.dup
+target_release_settings = target_debug_settings.merge(
+  'CODE_SIGNING_ALLOWED' => 'NO',
+  'CODE_SIGNING_REQUIRED' => 'NO',
+  'ENABLE_HARDENED_RUNTIME' => 'NO'
+)
 
 test_target_settings = {
   'BUNDLE_LOADER' => '$(TEST_HOST)',
@@ -188,6 +212,7 @@ project.build_configurations.each do |config|
 end
 
 target.build_configurations.each do |config|
+  config.base_configuration_reference = app_config_ref
   case config.name
   when 'Debug'
     apply_settings(config, target_debug_settings)

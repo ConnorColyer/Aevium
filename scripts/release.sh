@@ -29,8 +29,15 @@ if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
   exit 1
 fi
 
+./scripts/set_version.sh "$version"
+git add Aevium/Config/AppConfig.xcconfig
+
+if ! git diff --cached --quiet; then
+  git commit -m "Release ${tag}"
+fi
+
 git push origin main
 git tag -a "${tag}" -m "Release ${tag}"
 git push origin "${tag}"
 
-echo "Released ${tag}"
+echo "Released ${tag}. GitHub Actions will build the standalone app artifacts, publish the release, and refresh the Sparkle appcast."
